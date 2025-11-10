@@ -80,7 +80,7 @@ def build_R(sigma_GPS):
     
     
 # Main EKF Algorithm for one iteration:
-def EKF_iteration(x_k, P_k, z_k, R_k, Q_k, A_k, B_k, C_k):
+def EKF_iteration(x_k, P_k, z_k, u_k, R_k, Q_k, A_k, B_k, C_k, sigma_IMU, sigma_GPS):
     '''
     Main EKF algorithm for one iteration.
     Inputs:
@@ -92,14 +92,19 @@ def EKF_iteration(x_k, P_k, z_k, R_k, Q_k, A_k, B_k, C_k):
         A_k: A matrix at time k, 9x9 matrix
         B_k: B matrix at time k, 9x3 matrix
         C_k: C matrix at time k, 6x9 matrix
-        
+        sigma_IMU: Standard deviation of the IMU, scalar, assumed equally distributed in x, y, z
+        sigma_GPS: Standard deviation of the GPS, scalar, assumed equally distributed in x, y, z
     Output:
         x_k+1: State vector at time k+1, 9x1 matrix
         P_k+1: Covariance matrix at time k+1, 9x9 matrix
     '''
     
     # Prediction Step:
-    x_k+1 = A_k * x_k + B_k * u_k
+    # Only acceleration components should have noise
+    # w_k = np.zeros((9, 1))
+    # w_k[6:9, 0] = np.random.normal(0, sigma_IMU, 3) # Process noise for acceleration
+    
+    x_k+1 = A_k * x_k + B_k * u_k # + w_k
     P_k+1 = A_k * P_k * A_k.T + Q_k
     
     # Update Step:

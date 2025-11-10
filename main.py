@@ -40,7 +40,7 @@ def main():
     
     # Build each matrix:
     A = EKF.build_A(constants['dt'])
-    B = EKF.build_B(constants['m'], constants['dt'])
+    B = B = np.zeros((9, 3))    # assume no control input
     C = EKF.build_C(constants['m'], constants['dt'])
     Q = EKF.build_Q(constants['sigma_IMU'])
     R = EKF.build_R(constants['sigma_GPS'])
@@ -67,7 +67,7 @@ def main():
         y_t[5] = az[i]
         
         # Run EKF
-        x_k, P_k = EKF.EKF_iteration(x_k, P_k, y_t, R, Q, A, B, C)
+        x_k, P_k = EKF.EKF_iteration(x_k, P_k, y_t, np.zeros((3,1)), R, Q, A, B, C, constants['sigma_IMU'], constants['sigma_GPS'])
         x_k_storage[:, i] = x_k
         P_k_storage[:, :, i] = P_k
     
