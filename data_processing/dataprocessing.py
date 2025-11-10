@@ -1,11 +1,6 @@
 import pandas as pd
 import numpy as np
 
-from google.colab import drive
-drive.mount('/content/drive')
-
-file_path = '/content/drive/My Drive/test/test - Sheet1.csv'
-
 def data_processing(filepath):
     df = pd.read_csv(filepath)
     time = df['UTC'].to_numpy()
