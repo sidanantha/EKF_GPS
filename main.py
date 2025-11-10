@@ -2,6 +2,7 @@
 # Main file to run the EKF algorithm
 
 import EKF.EKF as EKF
+import data_processing.dataprocessing as data_processing
 import utils.utils as utils
 import numpy as np
 
@@ -35,7 +36,7 @@ def main():
     x_observer = utils.ecef_to_lla(constants['coordinates_observer'][0], constants['coordinates_observer'][1], constants['coordinates_observer'][2])
     
     # Load data
-    time, start_time, end_time, dt, lat, long, alt, x, y, z, ax, ay, az, gx, gy, gz = data_processing('data.csv')
+    time, starttime, endtime, timestep, lat, lon, alt, x, y, z, ax, ay, az, gx, gy, gz = data_processing.data_processing('data.csv')
     
     # Build each matrix:
     A = EKF.build_A(constants['dt'])
@@ -53,7 +54,7 @@ def main():
     P_k_storage = np.zeros((9, 9, len(time)))
     
     # Loop through data and run EKF
-    for i in range(start_time, end_time, dt):
+    for i in range(len(time)):
         
         # Define the measurement vector:
         x_drone = np.array([x[i], y[i], z[i]])
