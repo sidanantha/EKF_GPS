@@ -1,5 +1,6 @@
 import csv
 import pandas as pd
+import numpy as np
 
 df = pd.read_csv("data.csv")
 time = df['UTC'].to_numpy()
@@ -15,3 +16,4 @@ az = df['az'].to_numpy()
 gx = df['gx'].to_numpy()
 gy = df['gy'].to_numpy()
 gz = df['gz'].to_numpy()
+
