@@ -45,3 +45,5 @@ def plot_results(state, cov):
   plt.plot(t, z_up, color='cyan', linestyle='--', linewidth=1)
   plt.plot(t, z_low, color='cyan', linestyle='--', linewidth=1)
   plt.fill_between(t, z_up, z_low, color='gray', alpha=0.2)
+
+  plt.show()
