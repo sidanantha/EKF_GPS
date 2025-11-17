@@ -18,6 +18,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import EKF.EKF as EKF
 from mekf.MEKF import MEKF
 from data_processing.plotdata import plot_results, plot_euler_angles
+from data_processing.plotdata_true import (plot_positions_comparison, 
+                                           plot_attitude_comparison,
+                                           plot_estimation_errors)
 
 
 class SimulatedDynamics:
@@ -394,14 +397,15 @@ class TestEKFMEKF:
             print(f"  EKF Position RMSE:    {results['ekf_pos_rmse']:.4f} m")
             print(f"  MEKF Attitude RMSE:   {results['mekf_attitude_rmse']:.4f}°")
     
-    def plot_test_results(self, test_name=None, save_dir='test_results'):
+    def plot_test_results(self, test_name=None, base_save_dir='test_results'):
         """
         Plot results from a specific test or the first available test.
         Generates both EKF position plots and MEKF attitude (Euler angles) plots.
+        Saves plots in a subdirectory labeled with the test name.
         
         Args:
             test_name: Name of test to plot (e.g., 'linear_motion')
-            save_dir: Directory to save plots
+            base_save_dir: Base directory to save plots
         """
         if not self.results:
             print("No test results to plot!")
@@ -415,10 +419,16 @@ class TestEKFMEKF:
             print(f"Test '{test_name}' not found. Available tests: {list(self.results.keys())}")
             return
         
+        # Create subdirectory for this test's results
+        import os
+        save_dir = os.path.join(base_save_dir, test_name.replace('_', '_'))
+        os.makedirs(save_dir, exist_ok=True)
+        
         results = self.results[test_name]
         ekf_estimates = results['ekf_estimates']
         mekf_estimates = results['mekf_estimates']
         mekf_covariances = results.get('mekf_covariances', None)  # Get covariance if available
+        sim = results['sim']  # Get simulator object with ground truth data
         
         # Convert EKF results to format expected by plot_results
         # plot_results expects: state as list of 3-element vectors, cov as list of 3x3 matrices
@@ -442,6 +452,22 @@ class TestEKFMEKF:
             print("\nGenerating MEKF Attitude Plots (Euler Angles with 3σ Bounds)...")
             plot_euler_angles(mekf_estimates, covariances=mekf_covariances, 
                             save_dir=save_dir, show=True)
+            
+            # Plot comparison: estimated vs true positions
+            print("\nGenerating Position Comparison Plots (Estimated vs. True)...")
+            plot_positions_comparison(ekf_estimates[0:3, :], sim.position_truth,
+                                    save_dir=save_dir, show=True)
+            
+            # Plot comparison: estimated vs true attitudes
+            print("\nGenerating Attitude Comparison Plots (Estimated vs. True)...")
+            plot_attitude_comparison(mekf_estimates, sim.attitude_truth,
+                                   save_dir=save_dir, show=True)
+            
+            # Plot estimation errors (6 subplots)
+            print("\nGenerating Estimation Error Plots (6 states)...")
+            plot_estimation_errors(ekf_estimates[0:3, :], sim.position_truth,
+                                 mekf_estimates, sim.attitude_truth,
+                                 save_dir=save_dir, show=True)
             
         except Exception as e:
             print(f"Error during plotting: {e}")
@@ -473,12 +499,17 @@ def main(plot=False):
     # Print summary
     test_suite.print_summary()
     
-    # Optionally plot results
+    # Optionally plot results for all tests
     if plot:
         print("\n" + "="*70)
-        print("PLOTTING RESULTS")
+        print("PLOTTING RESULTS FOR ALL TESTS")
         print("="*70)
-        test_suite.plot_test_results('linear_motion')
+        
+        for test_name in ['linear_motion', 'circular_motion', 'helical_motion']:
+            print(f"\n{'='*70}")
+            print(f"Generating plots for: {test_name.upper().replace('_', ' ')}")
+            print(f"{'='*70}")
+            test_suite.plot_test_results(test_name, base_save_dir='test_results')
     
     print("\n" + "="*70)
     print("Tests completed!")
