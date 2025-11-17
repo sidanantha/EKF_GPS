@@ -102,18 +102,94 @@ if __name__ == '__main__':
     dead_reckoning_errors = quatListToErrorArrays(dead_reckoning_rotation_estimates, true_rotations)
     filtered_errors = quatListToErrorArrays(filtered_rotation_estimates, true_rotations)
 
-    unfiltered_roll, = plt.plot(dead_reckoning_errors[0], label='dead reckoning roll')
-    unfiltered_pitch, = plt.plot(dead_reckoning_errors[1], label='dead reckoning pitch')
-    unfiltered_yaw, = plt.plot(dead_reckoning_errors[2], label='dead reckoning yaw')
-    filtered_roll, = plt.plot(filtered_errors[0], label='mekf roll')
-    filtered_pitch, = plt.plot(filtered_errors[1], label='mekf pitch')
-    filtered_yaw, = plt.plot(filtered_errors[2], label='mekf yaw')
-    plt.legend(handles=[unfiltered_roll, 
+    # Original error plot (as it was before)
+    fig_orig, ax_orig = plt.subplots(figsize=(12, 8))
+    unfiltered_roll, = ax_orig.plot(dead_reckoning_errors[0], 'b--', linewidth=1.5, label='dead reckoning roll')
+    unfiltered_pitch, = ax_orig.plot(dead_reckoning_errors[1], 'b-', linewidth=1.5, alpha=0.7, label='dead reckoning pitch')
+    unfiltered_yaw, = ax_orig.plot(dead_reckoning_errors[2], 'b:', linewidth=1.5, alpha=0.7, label='dead reckoning yaw')
+    filtered_roll, = ax_orig.plot(filtered_errors[0], 'r--', linewidth=1.5, label='mekf roll')
+    filtered_pitch, = ax_orig.plot(filtered_errors[1], 'r-', linewidth=1.5, alpha=0.7, label='mekf pitch')
+    filtered_yaw, = ax_orig.plot(filtered_errors[2], 'r:', linewidth=1.5, alpha=0.7, label='mekf yaw')
+    ax_orig.legend(handles=[unfiltered_roll, 
                         unfiltered_pitch, 
                         unfiltered_yaw, 
                         filtered_roll, 
                         filtered_pitch, 
-                        filtered_yaw])
-    plt.xlabel("Discrete time")
-    plt.ylabel("Error (in radians)")
+                        filtered_yaw], loc='upper right')
+    ax_orig.set_xlabel("Discrete time (5ms steps)", fontweight='bold')
+    ax_orig.set_ylabel("Error (in radians)", fontweight='bold')
+    ax_orig.set_title("Original Error Plot: Dead Reckoning vs MEKF", fontsize=12, fontweight='bold')
+    ax_orig.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    # Convert quaternions to Euler angles for all three trajectories
+    true_euler = quatListToEulerArrays(true_rotations)
+    dead_reckoning_euler = quatListToEulerArrays(dead_reckoning_rotation_estimates)
+    filtered_euler = quatListToEulerArrays(filtered_rotation_estimates)
+    
+    time_steps = np.arange(len(true_rotations))
+    
+    # Create 3x1 figure for Euler angle comparison
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig.suptitle('Attitude Estimation Comparison: True vs Dead Reckoning vs MEKF', fontsize=14, fontweight='bold')
+    
+    # Roll (φ)
+    axes[0].plot(time_steps, np.degrees(true_euler[0]), 'k-', linewidth=2, label='True Roll')
+    axes[0].plot(time_steps, np.degrees(dead_reckoning_euler[0]), 'b--', linewidth=1.5, alpha=0.7, label='Dead Reckoning Roll')
+    axes[0].plot(time_steps, np.degrees(filtered_euler[0]), 'r-', linewidth=1.5, alpha=0.7, label='MEKF Roll')
+    axes[0].set_ylabel('Roll (degrees)', fontweight='bold')
+    axes[0].legend(loc='upper right')
+    axes[0].grid(True, alpha=0.3)
+    axes[0].set_title('Roll (φ) - Rotation around X-axis')
+    
+    # Pitch (θ)
+    axes[1].plot(time_steps, np.degrees(true_euler[1]), 'k-', linewidth=2, label='True Pitch')
+    axes[1].plot(time_steps, np.degrees(dead_reckoning_euler[1]), 'b--', linewidth=1.5, alpha=0.7, label='Dead Reckoning Pitch')
+    axes[1].plot(time_steps, np.degrees(filtered_euler[1]), 'r-', linewidth=1.5, alpha=0.7, label='MEKF Pitch')
+    axes[1].set_ylabel('Pitch (degrees)', fontweight='bold')
+    axes[1].legend(loc='upper right')
+    axes[1].grid(True, alpha=0.3)
+    axes[1].set_title('Pitch (θ) - Rotation around Y-axis')
+    
+    # Yaw (ψ)
+    axes[2].plot(time_steps, np.degrees(true_euler[2]), 'k-', linewidth=2, label='True Yaw')
+    axes[2].plot(time_steps, np.degrees(dead_reckoning_euler[2]), 'b--', linewidth=1.5, alpha=0.7, label='Dead Reckoning Yaw')
+    axes[2].plot(time_steps, np.degrees(filtered_euler[2]), 'r-', linewidth=1.5, alpha=0.7, label='MEKF Yaw')
+    axes[2].set_ylabel('Yaw (degrees)', fontweight='bold')
+    axes[2].set_xlabel('Time steps (5ms each)', fontweight='bold')
+    axes[2].legend(loc='upper right')
+    axes[2].grid(True, alpha=0.3)
+    axes[2].set_title('Yaw (ψ) - Rotation around Z-axis')
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Also create error plot for reference
+    fig2, axes2 = plt.subplots(3, 1, figsize=(12, 10))
+    fig2.suptitle('Attitude Estimation Error (vs True)', fontsize=14, fontweight='bold')
+    
+    axes2[0].plot(time_steps, dead_reckoning_errors[0], 'b--', linewidth=1.5, alpha=0.7, label='Dead Reckoning Error')
+    axes2[0].plot(time_steps, filtered_errors[0], 'r-', linewidth=1.5, alpha=0.7, label='MEKF Error')
+    axes2[0].set_ylabel('Roll Error (radians)', fontweight='bold')
+    axes2[0].legend(loc='upper right')
+    axes2[0].grid(True, alpha=0.3)
+    axes2[0].set_title('Roll Error')
+    
+    axes2[1].plot(time_steps, dead_reckoning_errors[1], 'b--', linewidth=1.5, alpha=0.7, label='Dead Reckoning Error')
+    axes2[1].plot(time_steps, filtered_errors[1], 'r-', linewidth=1.5, alpha=0.7, label='MEKF Error')
+    axes2[1].set_ylabel('Pitch Error (radians)', fontweight='bold')
+    axes2[1].legend(loc='upper right')
+    axes2[1].grid(True, alpha=0.3)
+    axes2[1].set_title('Pitch Error')
+    
+    axes2[2].plot(time_steps, dead_reckoning_errors[2], 'b--', linewidth=1.5, alpha=0.7, label='Dead Reckoning Error')
+    axes2[2].plot(time_steps, filtered_errors[2], 'r-', linewidth=1.5, alpha=0.7, label='MEKF Error')
+    axes2[2].set_ylabel('Yaw Error (radians)', fontweight='bold')
+    axes2[2].set_xlabel('Time steps (5ms each)', fontweight='bold')
+    axes2[2].legend(loc='upper right')
+    axes2[2].grid(True, alpha=0.3)
+    axes2[2].set_title('Yaw Error')
+    
+    plt.tight_layout()
     plt.show()

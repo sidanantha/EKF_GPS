@@ -20,9 +20,9 @@ def define_constants():
         'dt': 0.01, # Time step
         'm': 1000, # Mass
         'I': np.eye(3), # Inertial matrix
-        'sigma_IMU': 0.1, # Standard deviation of the IMU
-        'sigma_GPS': 0.1, # Standard deviation of the GPS
-        'initial_uncertainty': 1000, # Initial uncertainty for the state vector
+        'sigma_IMU': 0.05, # Standard deviation of the IMU (accelerometer noise)
+        'sigma_GPS': 1.0, # Standard deviation of the GPS (1 meter noise in simulated data)
+        'initial_uncertainty': 100, # Initial uncertainty for the state vector
         'coordinates_observer': np.array([0, 0, 0]), # Observer position, latitude, longitude, altitude
         # MEKF parameters
         'estimate_covariance': 1.0,
@@ -59,7 +59,9 @@ def main(data_file='data.csv', results_dir='results'):
     B = np.zeros((9, 3))    # assume no control input
     C = EKF.build_C(constants['m'], constants['dt'])
     Q = EKF.build_Q(constants['sigma_IMU'])
-    R = EKF.build_R(constants['sigma_GPS'])
+    # Build R with much higher noise for IMU measurements to trust GPS significantly more
+    # GPS noise: 1.0 m, IMU acceleration noise: heavily downweighted to prevent drift
+    R = EKF.build_R(constants['sigma_GPS'], sigma_IMU_meas=constants['sigma_IMU'] * 5)
     
     # Init EKF state vector and covariance matrix:
     x_k = np.zeros((9,1))
@@ -91,24 +93,45 @@ def main(data_file='data.csv', results_dir='results'):
         accel_meas = np.array([ax[i], ay[i], az[i]])
         gyro_meas = np.array([gx[i], gy[i], gz[i]])
         
+        # ========== RUN MEKF FIRST (Attitude Estimation) ==========
+        # MEKF expects NORMALIZED accelerometer measurements (unit vector in gravity direction)
+        # Normalize the acceleration vector to unit magnitude
+        accel_norm = np.linalg.norm(accel_meas)
+        if accel_norm > 0:
+            accel_normalized = accel_meas / accel_norm
+        else:
+            accel_normalized = accel_meas
+        
+        # Update MEKF with body-frame measurements
+        mekf.update(gyro_meas, accel_normalized, constants['dt'])
+        
+        # Get current attitude estimate (after update) for frame conversion
+        current_attitude = mekf.estimate
+        
         # ========== RUN EKF (Position Estimation) ==========
-        # Define the measurement vector:
-        x_drone = np.array([x[i], y[i], z[i]])
-        y_t = np.zeros((6,1))
-        y_t[0] = utils.relative_position(x_observer, x_drone)[0]
-        y_t[1] = utils.relative_position(x_observer, x_drone)[1]
-        y_t[2] = utils.relative_position(x_observer, x_drone)[2]
-        y_t[3] = ax[i]
-        y_t[4] = ay[i]
-        y_t[5] = az[i]
+        # Convert acceleration from body frame to inertial frame using MEKF attitude estimate
+        # accel_inertial = R_b2i * accel_body (rotate body frame acceleration to inertial)
+        accel_inertial = current_attitude.rotate(accel_meas)
+        
+        # Remove gravity component from Z axis for EKF measurement
+        accel_inertial_no_g = accel_inertial.copy()
+        accel_inertial_no_g[2] -= 9.81
+        
+        # Define the measurement vector: GPS position (inertial) + IMU acceleration (inertial, no gravity)
+        y_t = np.zeros((6, 1))
+        y_t[0] = x[i]  # GPS x position (inertial frame)
+        y_t[1] = y[i]  # GPS y position (inertial frame)
+        y_t[2] = z[i]  # GPS z position (inertial frame)
+        y_t[3] = accel_inertial_no_g[0]  # IMU acceleration x (inertial frame, gravity removed)
+        y_t[4] = accel_inertial_no_g[1]  # IMU acceleration y (inertial frame, gravity removed)
+        y_t[5] = accel_inertial_no_g[2]  # IMU acceleration z (inertial frame, gravity removed)
         
         # Run EKF iteration
         x_k, P_k = EKF.EKF_iteration(x_k, P_k, y_t, np.zeros((3,1)), R, Q, A, B, C, constants['sigma_IMU'], constants['sigma_GPS'])
         x_k_storage[:, i] = x_k.flatten()
         P_k_storage[:, :, i] = P_k
         
-        # ========== RUN MEKF (Attitude Estimation) ==========
-        mekf.update(gyro_meas, accel_meas, constants['dt'])
+        # ========== STORE MEKF RESULTS ==========
         quaternion_storage.append(mekf.estimate)
         mekf_cov_storage[:, :, i] = mekf.estimate_covariance
     

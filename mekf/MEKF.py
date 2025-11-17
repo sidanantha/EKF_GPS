@@ -1,6 +1,9 @@
 import numpy as np
 from pyquaternion import Quaternion
-from .util import skewSymmetric, quatToMatrix
+try:
+    from .util import skewSymmetric, quatToMatrix
+except ImportError:
+    from util import skewSymmetric, quatToMatrix
 
 class MEKF:
 

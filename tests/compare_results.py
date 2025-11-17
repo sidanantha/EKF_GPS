@@ -177,7 +177,7 @@ def main():
     print("COMPARISON: ESTIMATES vs GROUND TRUTH")
     print("="*70)
     
-    test_scenarios = ['linear_motion', 'circular_motion', 'helical_motion']
+    test_scenarios = ['linear_motion', 'circular_motion', 'helical_motion', 'random_rotation_motion']
     
     for test_name in test_scenarios:
         print(f"\n\nProcessing: {test_name.upper().replace('_', ' ')}")

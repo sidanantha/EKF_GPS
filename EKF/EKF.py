@@ -62,23 +62,28 @@ def build_Q(sigma_IMU):
     Inputs:
         sigma_IMU: Standard deviation of the IMU, scalar
     Output:
-        Q: Q matrix
+        Q: Q matrix (process noise covariance)
     '''
     Q = np.zeros((9, 9))
-    Q[6:9, 6:9] = sigma_IMU**2 * np.eye(3)
+    # Reduce acceleration noise by squaring sigma_IMU to make GPS measurements more influential
+    Q[6:9, 6:9] = (sigma_IMU**2) * np.eye(3)
     return Q
 
 
-def build_R(sigma_GPS):
+def build_R(sigma_GPS, sigma_IMU_meas=None):
     '''
     Builds the R matrix for the EKF.
     Inputs:
-        sigma_GPS: Standard deviation of the GPS
+        sigma_GPS: Standard deviation of the GPS (for position)
+        sigma_IMU_meas: Standard deviation of IMU measurements (for acceleration).
+                       If None, defaults to 10*sigma_GPS to trust GPS more.
     Output:
-        R: R matrix
+        R: R matrix (6x6 for position and acceleration measurements)
     '''
+    
     R = np.zeros((6, 6))
-    R[0:3, 0:3] = sigma_GPS**2 * np.eye(3)
+    R[0:3, 0:3] = sigma_GPS**2 * np.eye(3)  # GPS position noise (lower, trusted more)
+    R[3:6, 3:6] = sigma_IMU_meas**2 * np.eye(3)  # IMU acceleration noise (higher, trusted less)
     return R
     
 # Main EKF Algorithm for one iteration:

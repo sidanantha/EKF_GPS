@@ -164,7 +164,9 @@ class SimulatedDynamics:
         
         elif attitude_type == 'rolling':
             # Rolling motion (rotation around X axis)
-            roll_rate = 0.05  # rad/s
+            # Limited to moderate roll (max ~45°) to keep within MEKF validity
+            # MEKF assumes gravity primarily points downward; large rolls break this assumption
+            roll_rate = 0.001  # rad/s (reduced from 0.05 for moderate attitudes)
             for i, t in enumerate(self.t):
                 angle = roll_rate * t
                 q = Quaternion(axis=[1, 0, 0], angle=angle)
@@ -225,12 +227,15 @@ class SimulatedDynamics:
         g = np.array([0, 0, 9.81])  # Gravity
         
         for i in range(self.n_steps):
+            # Rotate to body frame (inverse of attitude quaternion)
+            q_inv = self.attitude_truth[i].inverse
+            
             # Get true acceleration (without gravity)
             a_true = self.acceleration_truth[:, i]
             
             # Rotate to body frame (inverse of attitude quaternion)
-            q_inv = self.attitude_truth[i].inverse
-            a_body = q_inv.rotate(a_true + g)  # Add gravity
+            # For EKF: we want full acceleration (motion + gravity)
+            a_body_full = q_inv.rotate(a_true + g)  # Add gravity
             
             # Gyroscope measures angular velocity in body frame
             omega_true = self.angular_velocity_truth[:, i]
@@ -239,7 +244,8 @@ class SimulatedDynamics:
             # GPS measures position in inertial frame
             self.gps_meas[:, i] = self.position_truth[:, i]
             
-            self.accel_meas[:, i] = a_body
+            # For CSV: store full acceleration (for EKF to read)
+            self.accel_meas[:, i] = a_body_full
             self.gyro_meas[:, i] = omega_body
             
             # Add noise
@@ -301,6 +307,54 @@ class TestEKFMEKF:
         self.simulations['helical_motion'] = sim
         return sim
     
+    def generate_random_rotation_motion(self):
+        """Generate motion with random angular velocity (matches mekf/main.py test)."""
+        print("\n" + "="*70)
+        print("GENERATING: Random Rotation Motion (like mekf/main.py)")
+        print("="*70)
+        
+        # This matches what mekf/main.py does:
+        # - No linear motion (position stays at origin)
+        # - Random angular velocity applied every 10 time steps
+        # - Same dt=0.005s, but scaled to 0.01s for our tests
+        
+        sim = SimulatedDynamics(dt=self.dt, duration=20.0)  # 2000 steps
+        
+        # Trajectory: no motion (stay at origin)
+        sim.position_truth = np.zeros((3, sim.n_steps))
+        sim.velocity_truth = np.zeros((3, sim.n_steps))
+        sim.acceleration_truth = np.zeros((3, sim.n_steps))
+        
+        # Attitude: random rotations applied periodically (like mekf/main.py)
+        sim.attitude_truth = []
+        sim.angular_velocity_truth = np.zeros((3, sim.n_steps))
+        
+        # Initialize with identity quaternion
+        current_q = Quaternion(axis=[1, 0, 0], angle=0)
+        current_angular_vel = np.array([0.0, 0.0, 0.0])
+        
+        for i, t in enumerate(sim.t):
+            # Update angular velocity every 100 time steps (like i % 10 in mekf/main.py but scaled)
+            if i % 100 == 0:
+                current_angular_vel = np.random.normal(0.0, 1.0, 3)
+            
+            # Update quaternion using current angular velocity
+            angle_magnitude = np.linalg.norm(current_angular_vel)
+            if angle_magnitude > 1e-6:
+                axis = current_angular_vel / angle_magnitude
+                # Small rotation over dt
+                dq = Quaternion(axis=axis, angle=angle_magnitude * sim.dt)
+                current_q = dq * current_q
+            
+            sim.attitude_truth.append(current_q)
+            sim.angular_velocity_truth[:, i] = current_angular_vel
+        
+        # Calculate IMU measurements with this attitude
+        sim.calculate_imu_measurements(add_noise=True)
+        
+        self.simulations['random_rotation_motion'] = sim
+        return sim
+    
     def save_ground_truth(self, test_name, output_dir='simulated_ground_truth'):
         """
         Save ground truth data to numpy files for later comparison with estimates.
@@ -351,17 +405,18 @@ def main():
     data_gen = TestEKFMEKF(dt=0.01)
     
     # Generate data for each scenario
-    print("\nGenerating simulated data for three scenarios:")
+    print("\nGenerating simulated data for four scenarios:")
     data_gen.generate_linear_motion()
     data_gen.generate_circular_motion()
     data_gen.generate_helical_motion()
+    data_gen.generate_random_rotation_motion()
     
     # Save CSV files for use with main.py
     print("\n" + "="*70)
     print("SAVING SIMULATED DATA TO CSV FILES")
     print("="*70)
     
-    for test_name in ['linear_motion', 'circular_motion', 'helical_motion']:
+    for test_name in ['linear_motion', 'circular_motion', 'helical_motion', 'random_rotation_motion']:
         sim = data_gen.simulations[test_name]
         csv_filename = f'simulated_data_{test_name}.csv'
         sim.save_to_csv(csv_filename, test_name)
@@ -371,7 +426,7 @@ def main():
     print("SAVING GROUND TRUTH DATA")
     print("="*70)
     
-    for test_name in ['linear_motion', 'circular_motion', 'helical_motion']:
+    for test_name in ['linear_motion', 'circular_motion', 'helical_motion', 'random_rotation_motion']:
         data_gen.save_ground_truth(test_name, output_dir='simulated_ground_truth')
     
     print("\n" + "="*70)
@@ -385,7 +440,7 @@ def main():
     
     import subprocess
     
-    for test_name in ['linear_motion', 'circular_motion', 'helical_motion']:
+    for test_name in ['linear_motion', 'circular_motion', 'helical_motion', 'random_rotation_motion']:
         csv_filename = f'simulated_data_{test_name}.csv'
         print(f"\nProcessing {test_name}...")
         result = subprocess.run(['python', 'main.py', csv_filename], 
@@ -400,7 +455,7 @@ def main():
     print("STEP 2: COMPARING ESTIMATES WITH GROUND TRUTH")
     print("="*70)
     
-    for test_name in ['linear_motion', 'circular_motion', 'helical_motion']:
+    for test_name in ['linear_motion', 'circular_motion', 'helical_motion', 'random_rotation_motion']:
         print(f"\nGenerating comparison plots for {test_name}...")
         result = subprocess.run(['python', 'tests/compare_results.py', test_name], 
                               capture_output=False, text=True)
