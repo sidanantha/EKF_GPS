@@ -3,6 +3,7 @@
 
 import csv
 import pandas as pd
+import numpy as np
 
 
 # Generate Matricies:
@@ -17,13 +18,13 @@ def build_A(dt):
     
     A = np.zeros((9, 9))
     # Diag:
-    A[0:3, 0:3] = eye(3)
-    A[3:6, 3:6] = eye(3)
-    A[6:9, 6:9] = eye(3)
+    A[0:3, 0:3] = np.eye(3)
+    A[3:6, 3:6] = np.eye(3)
+    A[6:9, 6:9] = np.eye(3)
     # Off-diag:
-    A[0:3, 3:6] = eye(3) * dt
-    A[0:3, 6:9] = (1/2) * dt**2 * eye(3)
-    A[3:6, 6:9] = eye(3) * dt
+    A[0:3, 3:6] = np.eye(3) * dt
+    A[0:3, 6:9] = (1/2) * dt**2 * np.eye(3)
+    A[3:6, 6:9] = np.eye(3) * dt
     return A
 
 def build_B(m, dt):
@@ -37,8 +38,8 @@ def build_B(m, dt):
     '''
     B = np.zeros((9, 3))
     
-    B[6:9, 0:3] = (1/m) * dt * eye(3)
-    
+    B[6:9, 0:3] = (1/m) * dt * np.eye(3)
+    return B
 
 def build_C(m, dt):
     '''
@@ -48,10 +49,11 @@ def build_C(m, dt):
         dt: Time step, scalar
     Output:
         C: C matrix, 6x9 matrix
+        Maps: [x, y, z, vx, vy, vz, ax, ay, az] to [px, py, pz, ax, ay, az]
     '''
     C = np.zeros((6, 9))
-    C[0:3, 0:3] = np.eye(3)
-    C[6:9, 6:9] = np.eye(3)
+    C[0:3, 0:3] = np.eye(3)  # Position measurement
+    C[3:6, 6:9] = np.eye(3)  # Acceleration measurement
     return C
 
 def build_Q(sigma_IMU):
@@ -63,7 +65,7 @@ def build_Q(sigma_IMU):
         Q: Q matrix
     '''
     Q = np.zeros((9, 9))
-    Q[6:9, 6:9] = sigma_IMU**2 * eye(3)
+    Q[6:9, 6:9] = sigma_IMU**2 * np.eye(3)
     return Q
 
 
@@ -77,7 +79,7 @@ def build_R(sigma_GPS):
     '''
     R = np.zeros((6, 6))
     R[0:3, 0:3] = sigma_GPS**2 * np.eye(3)
-    
+    return R
     
 # Main EKF Algorithm for one iteration:
 def EKF_iteration(x_k, P_k, z_k, u_k, R_k, Q_k, A_k, B_k, C_k, sigma_IMU, sigma_GPS):
@@ -104,10 +106,12 @@ def EKF_iteration(x_k, P_k, z_k, u_k, R_k, Q_k, A_k, B_k, C_k, sigma_IMU, sigma_
     # w_k = np.zeros((9, 1))
     # w_k[6:9, 0] = np.random.normal(0, sigma_IMU, 3) # Process noise for acceleration
     
-    x_k+1 = A_k * x_k + B_k * u_k # + w_k
-    P_k+1 = A_k * P_k * A_k.T + Q_k
+    x_k_next = A_k @ x_k + B_k @ u_k # + w_k
+    P_k_next = A_k @ P_k @ A_k.T + Q_k
     
     # Update Step:
-    K = P_k+1 * C_k.T * (C_k * P_k+1 * C_k.T + R_k).inv()
-    x_k+1 = x_k+1 + K * (z_k - C_k * x_k+1)
-    P_k+1 = (eye(9) - K * C_k) * P_k+1
+    K = P_k_next @ C_k.T @ np.linalg.inv(C_k @ P_k_next @ C_k.T + R_k)
+    x_k_next = x_k_next + K @ (z_k - C_k @ x_k_next)
+    P_k_next = (np.eye(9) - K @ C_k) @ P_k_next
+    
+    return x_k_next, P_k_next
