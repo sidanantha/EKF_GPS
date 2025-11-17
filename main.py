@@ -8,6 +8,7 @@ import utils.utils as utils
 import numpy as np
 from pyquaternion import Quaternion
 from mekf.MEKF import MEKF
+from data_processing.plotdata import plot_results, plot_euler_angles
 
 
 # Define constants
@@ -36,9 +37,13 @@ def define_constants():
 
 
 # Main Function:
-def main():
+def main(data_file='data.csv', results_dir='results'):
     '''
     Main function to run both EKF (for position) and MEKF (for attitude) algorithms
+    
+    Args:
+        data_file: Path to CSV file with measurement data (default: 'data.csv')
+        results_dir: Directory to save results (default: 'results')
     '''
     # Define constants
     constants = define_constants()
@@ -46,7 +51,7 @@ def main():
     x_observer = utils.ecef_to_lla(constants['coordinates_observer'][0], constants['coordinates_observer'][1], constants['coordinates_observer'][2])
     
     # Load data
-    time, starttime, endtime, timestep, lat, lon, alt, x, y, z, ax, ay, az, gx, gy, gz = data_processing.data_processing('data.csv')
+    time, starttime, endtime, timestep, lat, lon, alt, x, y, z, ax, ay, az, gx, gy, gz = data_processing.data_processing(data_file)
     
     # ============ EKF INITIALIZATION (for position estimation) ============
     # Build EKF matrices:
@@ -113,11 +118,28 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+    import os
+    
+    # Get data file from command line arguments
+    data_file = 'data.csv'
+    results_dir = 'results'
+    
+    if len(sys.argv) > 1:
+        data_file = sys.argv[1]
+        # Extract test name from filename (e.g., simulated_data_linear_motion.csv -> linear_motion)
+        if 'simulated_data_' in data_file:
+            test_name = data_file.replace('simulated_data_', '').replace('.csv', '')
+            results_dir = f'results/{test_name}'
+    
     print("Starting EKF and MEKF algorithms")
     print("=" * 60)
+    print(f"Loading data from: {data_file}")
+    print(f"Saving results to: {results_dir}")
+    print("=" * 60)
     
-    # Call main function
-    x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage = main()
+    # Call main function with custom results directory
+    x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage = main(data_file, results_dir)
     
     print("=" * 60)
     print("EKF and MEKF algorithms completed")
@@ -125,28 +147,48 @@ if __name__ == "__main__":
     
     # ============ SAVE RESULTS ============
     print("\nSaving results...")
+    import os
+    os.makedirs(results_dir, exist_ok=True)
     
     # Save EKF results
-    np.save('results/ekf_position_estimates.npy', x_k_storage)
-    np.save('results/ekf_covariance.npy', P_k_storage)
-    print("✓ EKF results saved to results/ekf_position_estimates.npy and results/ekf_covariance.npy")
+    np.save(f'{results_dir}/ekf_position_estimates.npy', x_k_storage)
+    np.save(f'{results_dir}/ekf_covariance.npy', P_k_storage)
+    print(f"✓ EKF results saved to {results_dir}/ekf_position_estimates.npy and {results_dir}/ekf_covariance.npy")
     
     # Save MEKF results
-    with open('results/mekf_quaternions.txt', 'w') as f:
+    with open(f'{results_dir}/mekf_quaternions.txt', 'w') as f:
         f.write("Time_Step,Qw,Qx,Qy,Qz\n")
         for i, q in enumerate(quaternion_storage):
             f.write(f"{i},{q.w},{q.x},{q.y},{q.z}\n")
-    print("✓ MEKF quaternion estimates saved to results/mekf_quaternions.txt")
+    print(f"✓ MEKF quaternion estimates saved to {results_dir}/mekf_quaternions.txt")
     
-    np.save('results/mekf_covariance.npy', mekf_cov_storage)
-    print("✓ MEKF covariance saved to results/mekf_covariance.npy")
+    np.save(f'{results_dir}/mekf_covariance.npy', mekf_cov_storage)
+    print(f"✓ MEKF covariance saved to {results_dir}/mekf_covariance.npy")
     
     
     # ============ PLOT RESULTS ============
     print("\nPlotting results...")
-    plot_results(x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage)
-    print("✓ Results plotted")
     
+
+    # Convert EKF results to format expected by plot_results
+    # plot_results expects: state as list of 3-element vectors, cov as list of 3x3 matrices
+    state_list = [x_k_storage[:3, i] for i in range(x_k_storage.shape[1])]
+    cov_list = []
+    # Extract 3x3 position covariances from 9x9 matrices
+    for i in range(P_k_storage.shape[2]):
+        cov_list.append(P_k_storage[0:3, 0:3, i])
+    
+    # Plot EKF position estimates (with 3σ bounds)
+    print("Generating EKF position plots...")
+    plot_results(state_list, cov_list, save_dir=results_dir, show=False)
+    
+    # Plot MEKF attitudes (Euler angles with 3σ bounds)
+    print("Generating MEKF attitude plots...")
+    plot_euler_angles(quaternion_storage, covariances=mekf_cov_storage, 
+                    save_dir=results_dir, show=False)
+    
+    print(f"✓ Results plotted and saved to {results_dir}/")
+
     # ============ PRINT SUMMARY ============
     print("\n" + "=" * 60)
     print("SUMMARY")
@@ -159,6 +201,6 @@ if __name__ == "__main__":
     print(f"  - Initial quaternion: {quaternion_storage[0]}")
     print(f"  - Final quaternion: {quaternion_storage[-1]}")
     
-    print("\nAll results have been saved to the 'results/' directory")
+    print(f"\nAll results have been saved to the '{results_dir}/' directory")
     print("=" * 60)
     

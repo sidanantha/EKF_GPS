@@ -1,26 +1,24 @@
 """
-Integrated EKF + MEKF Test Suite
-================================
+Simulated Data Generator for EKF + MEKF System
+===============================================
 
-Tests the combined EKF and MEKF filters using simulated dynamics.
-Generates ground truth trajectories and compares filter estimates.
+Generates simulated ground truth trajectories and corresponding IMU measurements.
+Creates CSV files for input to main.py and saves ground truth data for later
+comparison with filter estimates.
+
+Workflow:
+  1. This script generates CSV files (simulated_data_*.csv)
+  2. Run main.py to process CSV files and generate estimates
+  3. Run tests/compare_results.py to compare estimates with ground truth
 """
 
 import sys
 import os
 import numpy as np
 from pyquaternion import Quaternion
-import math
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
-import EKF.EKF as EKF
-from mekf.MEKF import MEKF
-from data_processing.plotdata import plot_results, plot_euler_angles
-from data_processing.plotdata_true import (plot_positions_comparison, 
-                                           plot_attitude_comparison,
-                                           plot_estimation_errors)
 
 
 class SimulatedDynamics:
@@ -52,11 +50,12 @@ class SimulatedDynamics:
         # Sensor measurements
         self.accel_meas = None          # (3, n_steps) - with noise
         self.gyro_meas = None           # (3, n_steps) - with noise
+        self.gps_meas = None            # (3, n_steps) - position with GPS noise
         
         # Noise standard deviations
         self.accel_noise_std = 0.05     # m/s^2
         self.gyro_noise_std = 0.01      # rad/s
-        self.gps_noise_std = 0.1        # m
+        self.gps_noise_std = 1.0        # m (1 meter GPS noise)
         
     def generate_trajectory(self, trajectory_type='circular'):
         """
@@ -175,6 +174,41 @@ class SimulatedDynamics:
         else:
             raise ValueError(f"Unknown attitude type: {attitude_type}")
     
+    def save_to_csv(self, filename, test_name='linear_motion'):
+        """
+        Save simulated data to CSV file for use with main.py.
+        
+        Args:
+            filename: Output CSV filename
+            test_name: Name of test to extract data from
+        """
+        import csv
+        import os
+        os.makedirs(os.path.dirname(filename) or '.', exist_ok=True)
+        
+        with open(filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+            # Header row matching data_processing.data_processing expectations
+            writer.writerow(['UTC', 'Lat', 'Lon', 'Alt', 'ECEF_X', 'ECEF_Y', 'ECEF_Z', 
+                           'ax', 'ay', 'az', 'gx', 'gy', 'gz'])
+            
+            # Write data rows
+            for i in range(self.n_steps):
+                utc_time = self.t[i]
+                # For ECEF coordinates, use the simulated GPS positions (noisy)
+                ecef_x, ecef_y, ecef_z = self.gps_meas[:, i]
+                # Use placeholder lat/lon (not used in tests)
+                lat, lon, alt = 0, 0, 0
+                # Accelerometer measurements
+                ax, ay, az = self.accel_meas[:, i]
+                # Gyroscope measurements
+                gx, gy, gz = self.gyro_meas[:, i]
+                
+                writer.writerow([utc_time, lat, lon, alt, ecef_x, ecef_y, ecef_z,
+                               ax, ay, az, gx, gy, gz])
+        
+        print(f"✓ Saved simulated data to: {filename}")
+    
     def calculate_imu_measurements(self, add_noise=True):
         """
         Calculate what IMU sensors should measure given true dynamics.
@@ -182,9 +216,11 @@ class SimulatedDynamics:
         IMU measures:
         - Accelerometer: Non-gravitational acceleration in body frame + gravity
         - Gyroscope: Angular velocity in body frame
+        - GPS: Position measurements with noise
         """
         self.accel_meas = np.zeros((3, self.n_steps))
         self.gyro_meas = np.zeros((3, self.n_steps))
+        self.gps_meas = np.zeros((3, self.n_steps))
         
         g = np.array([0, 0, 9.81])  # Gravity
         
@@ -200,6 +236,9 @@ class SimulatedDynamics:
             omega_true = self.angular_velocity_truth[:, i]
             omega_body = q_inv.rotate(omega_true)
             
+            # GPS measures position in inertial frame
+            self.gps_meas[:, i] = self.position_truth[:, i]
+            
             self.accel_meas[:, i] = a_body
             self.gyro_meas[:, i] = omega_body
             
@@ -207,19 +246,20 @@ class SimulatedDynamics:
             if add_noise:
                 self.accel_meas[:, i] += np.random.normal(0, self.accel_noise_std, 3)
                 self.gyro_meas[:, i] += np.random.normal(0, self.gyro_noise_std, 3)
+                self.gps_meas[:, i] += np.random.normal(0, self.gps_noise_std, 3)
 
 
 class TestEKFMEKF:
-    """Test suite for combined EKF + MEKF system."""
+    """Simulated data generator for EKF + MEKF system."""
     
     def __init__(self, dt=0.01):
         self.dt = dt
-        self.results = {}
+        self.simulations = {}
     
-    def test_linear_motion(self):
-        """Test filters on linear motion."""
+    def generate_linear_motion(self):
+        """Generate linear motion simulated data."""
         print("\n" + "="*70)
-        print("TEST 1: Linear Motion")
+        print("GENERATING: Linear Motion")
         print("="*70)
         
         # Generate trajectory
@@ -228,13 +268,13 @@ class TestEKFMEKF:
         sim.generate_attitude('static')
         sim.calculate_imu_measurements(add_noise=True)
         
-        # Run filters
-        self._run_filters(sim, "linear_motion")
+        self.simulations['linear_motion'] = sim
+        return sim
     
-    def test_circular_motion(self):
-        """Test filters on circular motion."""
+    def generate_circular_motion(self):
+        """Generate circular motion simulated data."""
         print("\n" + "="*70)
-        print("TEST 2: Circular Motion")
+        print("GENERATING: Circular Motion")
         print("="*70)
         
         # Generate trajectory
@@ -243,13 +283,13 @@ class TestEKFMEKF:
         sim.generate_attitude('yaw_only')
         sim.calculate_imu_measurements(add_noise=True)
         
-        # Run filters
-        self._run_filters(sim, "circular_motion")
+        self.simulations['circular_motion'] = sim
+        return sim
     
-    def test_helical_motion(self):
-        """Test filters on helical motion with rolling."""
+    def generate_helical_motion(self):
+        """Generate helical motion simulated data."""
         print("\n" + "="*70)
-        print("TEST 3: Helical Motion with Rolling")
+        print("GENERATING: Helical Motion with Rolling")
         print("="*70)
         
         # Generate trajectory
@@ -258,264 +298,128 @@ class TestEKFMEKF:
         sim.generate_attitude('rolling')
         sim.calculate_imu_measurements(add_noise=True)
         
-        # Run filters
-        self._run_filters(sim, "helical_motion")
+        self.simulations['helical_motion'] = sim
+        return sim
     
-    def _run_filters(self, sim, test_name):
+    def save_ground_truth(self, test_name, output_dir='simulated_ground_truth'):
         """
-        Run both EKF and MEKF on simulated data.
+        Save ground truth data to numpy files for later comparison with estimates.
         
         Args:
-            sim: SimulatedDynamics object
-            test_name: Name of test for reporting
+            test_name: Name of test (e.g., 'linear_motion')
+            output_dir: Directory to save ground truth files
         """
-        n_steps = sim.n_steps
-        
-        # ============ Initialize EKF ============
-        A = EKF.build_A(self.dt)
-        B = np.zeros((9, 3))
-        C = EKF.build_C(1000, self.dt)  # m = 1000 kg
-        Q = EKF.build_Q(0.1)
-        R = EKF.build_R(0.1)
-        
-        x_k = np.zeros((9, 1))
-        P_k = np.eye(9) * 1000
-        
-        ekf_estimates = np.zeros((9, n_steps))
-        ekf_covariances = np.zeros((9, 9, n_steps))
-        
-        # ============ Initialize MEKF ============
-        mekf = MEKF(Quaternion(axis=[1, 0, 0], angle=0),
-                    1.0, 0.1, 0.1, 0.1, 0.1, 0.1)
-        
-        mekf_estimates = []
-        mekf_covariances = np.zeros((15, 15, n_steps))
-        
-        # ============ Main Loop ============
-        print(f"\nRunning filters on {n_steps} time steps...")
-        
-        for i in range(n_steps):
-            # EKF measurement vector
-            y_t = np.zeros((6, 1))
-            y_t[0:3, 0] = sim.position_truth[:, i] + np.random.normal(0, sim.gps_noise_std, 3)
-            y_t[3:6, 0] = sim.accel_meas[:, i]
-            
-            # Run EKF
-            x_k, P_k = EKF.EKF_iteration(x_k, P_k, y_t, np.zeros((3, 1)), R, Q, A, B, C, 0.1, 0.1)
-            ekf_estimates[:, i] = x_k.flatten()
-            ekf_covariances[:, :, i] = P_k
-            
-            # Run MEKF
-            mekf.update(sim.gyro_meas[:, i], sim.accel_meas[:, i], self.dt)
-            mekf_estimates.append(mekf.estimate)
-            mekf_covariances[:, :, i] = mekf.estimate_covariance
-        
-        print("✓ Filters executed successfully")
-        
-        # ============ Compute Errors ============
-        print("\nComputing estimation errors...")
-        
-        # EKF Position Error
-        ekf_pos_error = ekf_estimates[0:3, :] - sim.position_truth
-        ekf_pos_rmse = np.sqrt(np.mean(np.sum(ekf_pos_error**2, axis=0)))
-        ekf_pos_max_error = np.max(np.linalg.norm(ekf_pos_error, axis=0))
-        
-        # EKF Velocity Error
-        ekf_vel_error = ekf_estimates[3:6, :] - sim.velocity_truth
-        ekf_vel_rmse = np.sqrt(np.mean(np.sum(ekf_vel_error**2, axis=0)))
-        
-        # EKF Acceleration Error
-        ekf_accel_error = ekf_estimates[6:9, :] - sim.acceleration_truth
-        ekf_accel_rmse = np.sqrt(np.mean(np.sum(ekf_accel_error**2, axis=0)))
-        
-        # MEKF Attitude Error (quaternion distance)
-        mekf_attitude_errors = []
-        for i, q_est in enumerate(mekf_estimates):
-            q_true = sim.attitude_truth[i]
-            # Quaternion error: angle between true and estimated
-            q_err = q_true.inverse * q_est
-            angle_err = 2 * np.arccos(np.clip(abs(q_err.w), -1, 1))  # rad
-            mekf_attitude_errors.append(np.degrees(angle_err))  # Convert to degrees
-        
-        mekf_attitude_rmse = np.sqrt(np.mean(np.array(mekf_attitude_errors)**2))
-        mekf_attitude_max_error = np.max(mekf_attitude_errors)
-        
-        # ============ Print Results ============
-        print("\n" + "-"*70)
-        print("EKF RESULTS (Position Estimation)")
-        print("-"*70)
-        print(f"Position RMSE:     {ekf_pos_rmse:.4f} m")
-        print(f"Position Max Error: {ekf_pos_max_error:.4f} m")
-        print(f"Velocity RMSE:     {ekf_vel_rmse:.4f} m/s")
-        print(f"Acceleration RMSE: {ekf_accel_rmse:.4f} m/s²")
-        
-        print("\n" + "-"*70)
-        print("MEKF RESULTS (Attitude Estimation)")
-        print("-"*70)
-        print(f"Attitude RMSE:     {mekf_attitude_rmse:.4f} degrees")
-        print(f"Attitude Max Error: {mekf_attitude_max_error:.4f} degrees")
-        
-        # Filter effectiveness
-        print("\n" + "-"*70)
-        print("FILTER EFFECTIVENESS")
-        print("-"*70)
-        
-        # Compare to dead reckoning (no filter)
-        dr_pos_error = ekf_estimates[0:3, -1] - sim.position_truth[:, -1]
-        dr_pos_error_norm = np.linalg.norm(dr_pos_error)
-        print(f"Final position error: {dr_pos_error_norm:.4f} m")
-        
-        # Store results
-        self.results[test_name] = {
-            'ekf_pos_rmse': ekf_pos_rmse,
-            'ekf_pos_max_error': ekf_pos_max_error,
-            'ekf_vel_rmse': ekf_vel_rmse,
-            'ekf_accel_rmse': ekf_accel_rmse,
-            'mekf_attitude_rmse': mekf_attitude_rmse,
-            'mekf_attitude_max_error': mekf_attitude_max_error,
-            'sim': sim,
-            'ekf_estimates': ekf_estimates,
-            'mekf_estimates': mekf_estimates,
-            'mekf_covariances': mekf_covariances,  # Store covariance matrices for plotting
-        }
-        
-        # Success criteria
-        success = (ekf_pos_rmse < 50.0 and  # Allow 50m error (loose for now)
-                   mekf_attitude_rmse < 30.0)  # Allow 30 degrees (loose for now)
-        
-        status = "✓ PASS" if success else "✗ FAIL"
-        print(f"\n{status}")
-    
-    def print_summary(self):
-        """Print summary of all tests."""
-        print("\n\n" + "="*70)
-        print("TEST SUMMARY")
-        print("="*70)
-        
-        for test_name, results in self.results.items():
-            print(f"\n{test_name.upper().replace('_', ' ')}:")
-            print(f"  EKF Position RMSE:    {results['ekf_pos_rmse']:.4f} m")
-            print(f"  MEKF Attitude RMSE:   {results['mekf_attitude_rmse']:.4f}°")
-    
-    def plot_test_results(self, test_name=None, base_save_dir='test_results'):
-        """
-        Plot results from a specific test or the first available test.
-        Generates both EKF position plots and MEKF attitude (Euler angles) plots.
-        Saves plots in a subdirectory labeled with the test name.
-        
-        Args:
-            test_name: Name of test to plot (e.g., 'linear_motion')
-            base_save_dir: Base directory to save plots
-        """
-        if not self.results:
-            print("No test results to plot!")
-            return
-        
-        # Select which test to plot
-        if test_name is None:
-            test_name = list(self.results.keys())[0]
-        
-        if test_name not in self.results:
-            print(f"Test '{test_name}' not found. Available tests: {list(self.results.keys())}")
-            return
-        
-        # Create subdirectory for this test's results
         import os
-        save_dir = os.path.join(base_save_dir, test_name.replace('_', '_'))
-        os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
         
-        results = self.results[test_name]
-        ekf_estimates = results['ekf_estimates']
-        mekf_estimates = results['mekf_estimates']
-        mekf_covariances = results.get('mekf_covariances', None)  # Get covariance if available
-        sim = results['sim']  # Get simulator object with ground truth data
+        if test_name not in self.simulations:
+            print(f"Test '{test_name}' not found in simulations!")
+            return
         
-        # Convert EKF results to format expected by plot_results
-        # plot_results expects: state as list of 3-element vectors, cov as list of 3x3 matrices
-        state_list = [ekf_estimates[:3, i] for i in range(ekf_estimates.shape[1])]
+        sim = self.simulations[test_name]
         
-        print(f"\nPlotting results for: {test_name.upper().replace('_', ' ')}")
-        print("="*70)
+        # Save ground truth data
+        np.save(f'{output_dir}/{test_name}_position_truth.npy', sim.position_truth)
+        np.save(f'{output_dir}/{test_name}_velocity_truth.npy', sim.velocity_truth)
+        np.save(f'{output_dir}/{test_name}_acceleration_truth.npy', sim.acceleration_truth)
+        np.save(f'{output_dir}/{test_name}_angular_velocity_truth.npy', sim.angular_velocity_truth)
         
-        # Create covariance list (3x3 position covariances extracted from 9x9)
-        cov_list = []
-        # Note: We don't have the full covariance matrices in results, so use identity
-        for i in range(len(state_list)):
-            cov_list.append(np.eye(3) * 0.01)  # Small placeholder covariance
+        # Save attitude truth as quaternion list (convert to numpy for saving)
+        quat_array = np.array([[q.w, q.x, q.y, q.z] for q in sim.attitude_truth])
+        np.save(f'{output_dir}/{test_name}_attitude_truth.npy', quat_array)
         
-        try:
-            # Plot EKF position estimates (single figure with 3 subplots)
-            print("\nGenerating EKF Position Plots (X, Y, Z combined in one figure)...")
-            plot_results(state_list, cov_list, save_dir=save_dir, show=True)
-            
-            # Plot MEKF attitude (Euler angles with covariance bounds)
-            print("\nGenerating MEKF Attitude Plots (Euler Angles with 3σ Bounds)...")
-            plot_euler_angles(mekf_estimates, covariances=mekf_covariances, 
-                            save_dir=save_dir, show=True)
-            
-            # Plot comparison: estimated vs true positions
-            print("\nGenerating Position Comparison Plots (Estimated vs. True)...")
-            plot_positions_comparison(ekf_estimates[0:3, :], sim.position_truth,
-                                    save_dir=save_dir, show=True)
-            
-            # Plot comparison: estimated vs true attitudes
-            print("\nGenerating Attitude Comparison Plots (Estimated vs. True)...")
-            plot_attitude_comparison(mekf_estimates, sim.attitude_truth,
-                                   save_dir=save_dir, show=True)
-            
-            # Plot estimation errors (6 subplots)
-            print("\nGenerating Estimation Error Plots (6 states)...")
-            plot_estimation_errors(ekf_estimates[0:3, :], sim.position_truth,
-                                 mekf_estimates, sim.attitude_truth,
-                                 save_dir=save_dir, show=True)
-            
-        except Exception as e:
-            print(f"Error during plotting: {e}")
-            print("Plots may not display correctly, but computation was successful.")
+        # Save time vector
+        np.save(f'{output_dir}/{test_name}_time.npy', sim.t)
+        
+        print(f"✓ Saved ground truth data for {test_name} to {output_dir}/")
 
 
-def main(plot=False):
+def main():
     """
-    Run all tests.
-    
-    Args:
-        plot: If True, plot results from the linear motion test
+    Generate simulated data for all test scenarios and save to CSV files.
+    Ground truth data is also saved for later comparison.
+    Then runs main.py and compare_results.py automatically.
     """
     print("\n" + "="*70)
-    print("INTEGRATED EKF + MEKF TEST SUITE")
+    print("SIMULATED DATA GENERATION")
     print("="*70)
     
     # Set random seed for reproducibility
     np.random.seed(42)
     
-    # Create test suite
-    test_suite = TestEKFMEKF(dt=0.01)
+    # Create data generator
+    data_gen = TestEKFMEKF(dt=0.01)
     
-    # Run tests
-    test_suite.test_linear_motion()
-    test_suite.test_circular_motion()
-    test_suite.test_helical_motion()
+    # Generate data for each scenario
+    print("\nGenerating simulated data for three scenarios:")
+    data_gen.generate_linear_motion()
+    data_gen.generate_circular_motion()
+    data_gen.generate_helical_motion()
     
-    # Print summary
-    test_suite.print_summary()
+    # Save CSV files for use with main.py
+    print("\n" + "="*70)
+    print("SAVING SIMULATED DATA TO CSV FILES")
+    print("="*70)
     
-    # Optionally plot results for all tests
-    if plot:
-        print("\n" + "="*70)
-        print("PLOTTING RESULTS FOR ALL TESTS")
-        print("="*70)
-        
-        for test_name in ['linear_motion', 'circular_motion', 'helical_motion']:
-            print(f"\n{'='*70}")
-            print(f"Generating plots for: {test_name.upper().replace('_', ' ')}")
-            print(f"{'='*70}")
-            test_suite.plot_test_results(test_name, base_save_dir='test_results')
+    for test_name in ['linear_motion', 'circular_motion', 'helical_motion']:
+        sim = data_gen.simulations[test_name]
+        csv_filename = f'simulated_data_{test_name}.csv'
+        sim.save_to_csv(csv_filename, test_name)
+    
+    # Save ground truth data for later comparison
+    print("\n" + "="*70)
+    print("SAVING GROUND TRUTH DATA")
+    print("="*70)
+    
+    for test_name in ['linear_motion', 'circular_motion', 'helical_motion']:
+        data_gen.save_ground_truth(test_name, output_dir='simulated_ground_truth')
     
     print("\n" + "="*70)
-    print("Tests completed!")
+    print("DATA GENERATION COMPLETED!")
+    print("="*70)
+    
+    # ============ STEP 1: RUN FILTERS ON CSV DATA ============
+    print("\n\n" + "="*70)
+    print("STEP 1: RUNNING EKF/MEKF FILTERS ON SIMULATED DATA")
+    print("="*70)
+    
+    import subprocess
+    
+    for test_name in ['linear_motion', 'circular_motion', 'helical_motion']:
+        csv_filename = f'simulated_data_{test_name}.csv'
+        print(f"\nProcessing {test_name}...")
+        result = subprocess.run(['python', 'main.py', csv_filename], 
+                              capture_output=False, text=True)
+        if result.returncode != 0:
+            print(f"✗ Error processing {test_name}")
+        else:
+            print(f"✓ Completed {test_name}")
+    
+    # ============ STEP 2: COMPARE ESTIMATES WITH GROUND TRUTH ============
+    print("\n\n" + "="*70)
+    print("STEP 2: COMPARING ESTIMATES WITH GROUND TRUTH")
+    print("="*70)
+    
+    for test_name in ['linear_motion', 'circular_motion', 'helical_motion']:
+        print(f"\nGenerating comparison plots for {test_name}...")
+        result = subprocess.run(['python', 'tests/compare_results.py', test_name], 
+                              capture_output=False, text=True)
+        if result.returncode != 0:
+            print(f"✗ Error comparing {test_name}")
+        else:
+            print(f"✓ Completed comparison for {test_name}")
+    
+    print("\n" + "="*70)
+    print("ALL STEPS COMPLETED!")
+    print("="*70)
+    print("\nGenerated files:")
+    print("  - CSV data: simulated_data_*.csv")
+    print("  - Ground truth: simulated_ground_truth/")
+    print("  - Estimates: results/")
+    print("  - Plots: test_results/")
     print("="*70 + "\n")
 
 
 if __name__ == "__main__":
-    main(plot=True)  # Set to True to generate plots
+    main()
 
