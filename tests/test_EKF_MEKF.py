@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import EKF.EKF as EKF
 from mekf.MEKF import MEKF
-from data_processing.plotdata import plot_results
+from data_processing.plotdata import plot_results, plot_euler_angles
 
 
 class SimulatedDynamics:
@@ -373,6 +373,7 @@ class TestEKFMEKF:
             'sim': sim,
             'ekf_estimates': ekf_estimates,
             'mekf_estimates': mekf_estimates,
+            'mekf_covariances': mekf_covariances,  # Store covariance matrices for plotting
         }
         
         # Success criteria
@@ -396,6 +397,7 @@ class TestEKFMEKF:
     def plot_test_results(self, test_name=None, save_dir='test_results'):
         """
         Plot results from a specific test or the first available test.
+        Generates both EKF position plots and MEKF attitude (Euler angles) plots.
         
         Args:
             test_name: Name of test to plot (e.g., 'linear_motion')
@@ -415,8 +417,10 @@ class TestEKFMEKF:
         
         results = self.results[test_name]
         ekf_estimates = results['ekf_estimates']
+        mekf_estimates = results['mekf_estimates']
+        mekf_covariances = results.get('mekf_covariances', None)  # Get covariance if available
         
-        # Convert to format expected by plot_results
+        # Convert EKF results to format expected by plot_results
         # plot_results expects: state as list of 3-element vectors, cov as list of 3x3 matrices
         state_list = [ekf_estimates[:3, i] for i in range(ekf_estimates.shape[1])]
         
@@ -430,7 +434,15 @@ class TestEKFMEKF:
             cov_list.append(np.eye(3) * 0.01)  # Small placeholder covariance
         
         try:
+            # Plot EKF position estimates (single figure with 3 subplots)
+            print("\nGenerating EKF Position Plots (X, Y, Z combined in one figure)...")
             plot_results(state_list, cov_list, save_dir=save_dir, show=True)
+            
+            # Plot MEKF attitude (Euler angles with covariance bounds)
+            print("\nGenerating MEKF Attitude Plots (Euler Angles with 3σ Bounds)...")
+            plot_euler_angles(mekf_estimates, covariances=mekf_covariances, 
+                            save_dir=save_dir, show=True)
+            
         except Exception as e:
             print(f"Error during plotting: {e}")
             print("Plots may not display correctly, but computation was successful.")
