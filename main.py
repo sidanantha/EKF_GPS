@@ -22,6 +22,8 @@ def define_constants():
         'I': np.eye(3), # Inertial matrix
         'sigma_IMU': 0.05, # Standard deviation of the IMU (accelerometer noise)
         'sigma_GPS': 1.0, # Standard deviation of the GPS (1 meter noise in simulated data)
+        'GPS_spoof_noise': 100, # Additional GPS noise to inject (meters) - set to 0 for no spoofing
+        'GPS_spoof_start_time': -1, # Time (seconds) to start GPS spoofing - set to -1 to disable
         'initial_uncertainty': 100, # Initial uncertainty for the state vector
         'coordinates_observer': np.array([0, 0, 0]), # Observer position, latitude, longitude, altitude
         # MEKF parameters
@@ -61,7 +63,7 @@ def main(data_file='data.csv', results_dir='results'):
     Q = EKF.build_Q(constants['sigma_IMU'])
     # Build R with much higher noise for IMU measurements to trust GPS significantly more
     # GPS noise: 1.0 m, IMU acceleration noise: heavily downweighted to prevent drift
-    R = EKF.build_R(constants['sigma_GPS'], sigma_IMU_meas=constants['sigma_IMU'] * 5)
+    R = EKF.build_R(constants['sigma_GPS'], sigma_IMU_meas=constants['sigma_IMU'] * 1)
     
     # Init EKF state vector and covariance matrix:
     x_k = np.zeros((9,1))
@@ -119,9 +121,17 @@ def main(data_file='data.csv', results_dir='results'):
         
         # Define the measurement vector: GPS position (inertial) + IMU acceleration (inertial, no gravity)
         y_t = np.zeros((6, 1))
-        y_t[0] = x[i]  # GPS x position (inertial frame)
-        y_t[1] = y[i]  # GPS y position (inertial frame)
-        y_t[2] = z[i]  # GPS z position (inertial frame)
+        
+        # Inject GPS spoofing noise if specified and after start time
+        current_time = time[i]
+        spoof_active = (constants['GPS_spoof_noise'] > 0 and 
+                       constants['GPS_spoof_start_time'] >= 0 and 
+                       current_time >= constants['GPS_spoof_start_time'])
+        gps_spoof = np.random.normal(0, constants['GPS_spoof_noise'], 3) if spoof_active else np.zeros(3)
+        
+        y_t[0] = x[i] + gps_spoof[0]  # GPS x position (inertial frame) + spoof noise
+        y_t[1] = y[i] + gps_spoof[1]  # GPS y position (inertial frame) + spoof noise
+        y_t[2] = z[i] + gps_spoof[2]  # GPS z position (inertial frame) + spoof noise
         y_t[3] = accel_inertial_no_g[0]  # IMU acceleration x (inertial frame, gravity removed)
         y_t[4] = accel_inertial_no_g[1]  # IMU acceleration y (inertial frame, gravity removed)
         y_t[5] = accel_inertial_no_g[2]  # IMU acceleration z (inertial frame, gravity removed)
