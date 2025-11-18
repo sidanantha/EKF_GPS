@@ -63,6 +63,44 @@ def get_time_array(df):
     return time_seconds
 
 
+def plot_individual_columns(csv_file_path, output_dir='./plots'):
+    """
+    Create individual plots for each CSV column and save as PNG files.
+    """
+    # Read CSV data
+    df = read_csv_data(csv_file_path)
+    
+    # Get time array
+    time = get_time_array(df)
+    
+    # Get filename for organizing plots
+    filename = Path(csv_file_path).stem
+    file_output_dir = os.path.join(output_dir, filename)
+    os.makedirs(file_output_dir, exist_ok=True)
+    
+    # Columns to plot (excluding UTC)
+    columns_to_plot = [col for col in df.columns if col != 'UTC']
+    
+    for col in columns_to_plot:
+        try:
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(time, df[col], linewidth=1.5)
+            ax.set_xlabel('Time (s)')
+            ax.set_ylabel(col)
+            ax.set_title(f'{col} vs Time\n{filename}')
+            ax.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            
+            plot_path = os.path.join(file_output_dir, f'{col}.png')
+            fig.savefig(plot_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {plot_path}")
+            
+            plt.close(fig)
+        except Exception as e:
+            print(f"Error plotting {col}: {e}")
+
+
 def plot_gps_and_imu_data(csv_file_path, output_dir='./plots'):
     """
     Create two plots:
@@ -193,6 +231,10 @@ def plot_gps_and_imu_data(csv_file_path, output_dir='./plots'):
     
     plt.close(fig1)
     plt.close(fig2)
+    
+    # Generate individual column plots
+    print(f"Generating individual column plots for {filename}...")
+    plot_individual_columns(csv_file_path, output_dir)
 
 
 def plot_all_csv_files(field_data_dir, output_dir='./plots'):
