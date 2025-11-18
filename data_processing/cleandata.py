@@ -17,8 +17,16 @@ def clean_duplicate_timestamps(csv_file_path, output_path=None):
         DataFrame with cleaned data
     """
     
-    # Read CSV, skipping the PuTTY log header if present
+    # Try reading with skiprows=1 first (for files with PuTTY log header)
     df = pd.read_csv(csv_file_path, skiprows=1)
+    
+    # If UTC column is missing, try reading without skipping rows
+    if 'UTC' not in df.columns:
+        df = pd.read_csv(csv_file_path)
+    
+    # If still no UTC column, raise an error
+    if 'UTC' not in df.columns:
+        raise ValueError(f"UTC column not found in {csv_file_path}. Available columns: {df.columns.tolist()}")
     
     # Get original row count
     original_count = len(df)

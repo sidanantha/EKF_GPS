@@ -9,9 +9,19 @@ import argparse
 def read_csv_data(file_path):
     """
     Read CSV data from the specified file.
-    Skip the first row if it contains metadata.
+    Skip the first row if it contains metadata (PuTTY log header).
     """
+    # Try reading with skiprows=1 first (for files with PuTTY log header)
     df = pd.read_csv(file_path, skiprows=1)
+    
+    # If UTC column is missing, try reading without skipping rows
+    if 'UTC' not in df.columns:
+        df = pd.read_csv(file_path)
+    
+    # If still no UTC column, raise an error
+    if 'UTC' not in df.columns:
+        raise ValueError(f"UTC column not found in {file_path}. Available columns: {df.columns.tolist()}")
+    
     return df
 
 
