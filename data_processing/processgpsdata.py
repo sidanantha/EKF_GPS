@@ -7,7 +7,7 @@ import argparse
 def remove_blanks(csv_file_path, output_path = None):
     df = pd.read_csv(csv_file_path, skiprows=1)
     df_blanks = df.replace(['', ' '], np.nan)
-    df_cleaned = df_blanks.dropna()
+    df_cleaned = df_blanks.dropna().reset_index(drop=True)
   
     return df_cleaned
 
