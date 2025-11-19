@@ -4,8 +4,7 @@ from pathlib import Path
 import argparse
 
 #remove blanks
-def remove_blanks(csv_file_path, output_path = None):
-    df = pd.read_csv(csv_file_path, skiprows=1)
+def remove_blanks(df):
     df_blanks = df.replace(['', ' '], np.nan)
     df_cleaned = df_blanks.dropna().reset_index(drop=True)
   
@@ -36,8 +35,11 @@ def remove_outliers(df, w = 5, thres = 3):
 
 #main function to process gps data before ekf
 def process_gps_data(csv_file_path, output_path = None):
+    #read in csv data
+    df = pd.read_csv(csv_file_path, skiprows=1)
+
     #remove blanks
-    df_cleaned = remove_blanks(csv_file_path, output_path = None)
+    df_cleaned = remove_blanks(df)
 
     #smooth data and remove gps outliers greater than 3 sigma
     df_cleaned = remove_outliers(df_cleaned)
