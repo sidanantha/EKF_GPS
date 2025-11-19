@@ -36,7 +36,7 @@ def remove_outliers(df, num = 5, thres = 3):
 #main function to process gps data before ekf
 def process_gps_data(csv_file_path, output_path = None):
     #read in csv data
-    df = pd.read_csv(csv_file_path, skiprows=1)
+    df = pd.read_csv(csv_file_path)
 
     #remove blanks
     df_cleaned = remove_blanks(df)
