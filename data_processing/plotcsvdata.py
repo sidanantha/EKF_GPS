@@ -6,6 +6,10 @@ from pathlib import Path
 import argparse
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import sys
+# Add parent directory to path to import utils
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import utils.utils as utils
 
 
 def read_csv_data(file_path):
@@ -520,6 +524,126 @@ def plot_relative_enu_data_plotly(csv_file_path, output_dir='./plots'):
     print(f"Saved: {plot_path}")
 
 
+def plot_yaw_from_magnetometer(csv_file_path, output_dir='./plots', R_sensor_to_body=None):
+    """
+    Compute yaw angle from magnetometer data using the compute_yaw function.
+    Assumes roll and pitch are 0 for all measurements.
+    
+    Args:
+        csv_file_path: Path to CSV file with magnetometer data
+        output_dir: Output directory for plots
+        R_sensor_to_body: Rotation matrix from sensor to body frame (default: identity matrix)
+    """
+    # Read CSV data
+    df = read_csv_data(csv_file_path)
+    time = get_time_array(df)
+    filename = Path(csv_file_path).stem
+    file_output_dir = os.path.join(output_dir, filename)
+    os.makedirs(file_output_dir, exist_ok=True)
+    
+    # If no rotation matrix provided, use identity
+    if R_sensor_to_body is None:
+        R_sensor_to_body = np.eye(3)
+    
+    # Extract magnetometer data and convert to numeric
+    magx = pd.to_numeric(df['magx'], errors='coerce').values
+    magy = pd.to_numeric(df['magy'], errors='coerce').values
+    magz = pd.to_numeric(df['magz'], errors='coerce').values
+    
+    # Compute yaw angles (roll=0, pitch=0 for all measurements)
+    roll = 0
+    pitch = 0
+    yaw_angles = []
+    
+    for i in range(len(magx)):
+        if not (np.isnan(magx[i]) or np.isnan(magy[i]) or np.isnan(magz[i])):
+            yaw = utils.compute_yaw(magx[i], magy[i], magz[i], roll, pitch, R_sensor_to_body)
+            yaw_angles.append(np.degrees(yaw))
+        else:
+            yaw_angles.append(np.nan)
+    
+    yaw_angles = np.array(yaw_angles)
+    
+    # Create matplotlib plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(time, yaw_angles, linewidth=1.5, color='blue', label='Yaw')
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Yaw (degrees)')
+    ax.set_title(f'Yaw Angle from Magnetometer (roll=0°, pitch=0°)\n{filename}')
+    ax.grid(True, alpha=0.3)
+    ax.ticklabel_format(style='plain', axis='y', useOffset=False)
+    ax.legend(loc='best')
+    
+    plt.tight_layout()
+    
+    plot_path = os.path.join(file_output_dir, 'yaw_from_magnetometer.png')
+    fig.savefig(plot_path, dpi=150, bbox_inches='tight')
+    print(f"Saved: {plot_path}")
+    
+    plt.close(fig)
+
+
+def plot_yaw_from_magnetometer_plotly(csv_file_path, output_dir='./plots', R_sensor_to_body=None):
+    """
+    Create interactive Plotly plot for yaw angle computed from magnetometer data.
+    Assumes roll and pitch are 0 for all measurements.
+    """
+    # Read CSV data
+    df = read_csv_data(csv_file_path)
+    time = get_time_array(df)
+    filename = Path(csv_file_path).stem
+    file_output_dir = os.path.join(output_dir, filename)
+    os.makedirs(file_output_dir, exist_ok=True)
+    
+    # If no rotation matrix provided, use identity
+    if R_sensor_to_body is None:
+        R_sensor_to_body = np.eye(3)
+    
+    # Extract magnetometer data and convert to numeric
+    magx = pd.to_numeric(df['magx'], errors='coerce').values
+    magy = pd.to_numeric(df['magy'], errors='coerce').values
+    magz = pd.to_numeric(df['magz'], errors='coerce').values
+    
+    # Compute yaw angles (roll=0, pitch=0 for all measurements)
+    roll = 0
+    pitch = 0
+    yaw_angles = []
+    
+    for i in range(len(magx)):
+        if not (np.isnan(magx[i]) or np.isnan(magy[i]) or np.isnan(magz[i])):
+            yaw = utils.compute_yaw(magx[i], magy[i], magz[i], roll, pitch, R_sensor_to_body)
+            yaw_angles.append(np.degrees(yaw))
+        else:
+            yaw_angles.append(np.nan)
+    
+    yaw_angles = np.array(yaw_angles)
+    
+    # Create Plotly figure
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=time, 
+        y=yaw_angles, 
+        mode='lines',
+        name='Yaw',
+        line=dict(color='blue', width=2)
+    ))
+    
+    fig.update_layout(
+        title=f'Yaw Angle from Magnetometer (roll=0°, pitch=0°)<br>{filename}',
+        xaxis_title='Time (s)',
+        yaxis_title='Yaw (degrees)',
+        hovermode='x unified',
+        template='plotly_white',
+        height=600,
+        width=1000
+    )
+    
+    plot_path = os.path.join(file_output_dir, 'yaw_from_magnetometer_interactive.html')
+    fig.write_html(plot_path)
+    print(f"Saved: {plot_path}")
+
+
 def plot_gps_and_imu_data_plotly(csv_file_path, output_dir='./plots', window_size=1, show_moving_avg=False):
     """
     Create interactive Plotly plots for GPS/ECEF and IMU data.
@@ -831,6 +955,10 @@ def plot_gps_and_imu_data(csv_file_path, output_dir='./plots', window_size=1, sh
     # Generate relative ENU plots
     print(f"Generating relative ENU plots for {filename}...")
     plot_relative_enu_data(csv_file_path, output_dir)
+    
+    # Generate yaw from magnetometer plots
+    print(f"Generating yaw from magnetometer plots for {filename}...")
+    plot_yaw_from_magnetometer(csv_file_path, output_dir)
 
 
 def plot_all_data_with_plotly(csv_file_path, output_dir='./plots', window_size=1, show_moving_avg=False):
@@ -846,6 +974,7 @@ def plot_all_data_with_plotly(csv_file_path, output_dir='./plots', window_size=1
     plot_individual_columns_plotly(csv_file_path, output_dir, window_size=window_size, show_moving_avg=show_moving_avg)
     plot_relative_ecef_data_plotly(csv_file_path, output_dir)
     plot_relative_enu_data_plotly(csv_file_path, output_dir)
+    plot_yaw_from_magnetometer_plotly(csv_file_path, output_dir)
 
 
 def plot_all_csv_files(field_data_dir, output_dir='./plots', window_size=1, show_moving_avg=False, use_plotly=False):

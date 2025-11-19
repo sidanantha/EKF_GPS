@@ -17,7 +17,7 @@ def define_constants():
     Define constants for the EKF and MEKF algorithms
     '''
     constants = {
-        'dt': 0.01, # Time step
+        'dt': 0.1, # Time step
         'm': 1000, # Mass
         'I': np.eye(3), # Inertial matrix
         'sigma_IMU': 0.05, # Standard deviation of the IMU (accelerometer noise)
@@ -93,6 +93,13 @@ def main(data_file='data.csv', results_dir='results'):
     quaternion_storage = []  # Store quaternions
     mekf_cov_storage = np.zeros((15, 15, len(time)))
     
+    # Extract the reference position, in terms of its coordinates:
+    ref_lat = lat[0]
+    ref_lon = lon[0]
+    ref_ecef_x = x[0]
+    ref_ecef_y = y[0]
+    ref_ecef_z = z[0]
+    
     # ============ MAIN LOOP ============
     for i in range(len(time)):
         
@@ -104,7 +111,11 @@ def main(data_file='data.csv', results_dir='results'):
         gyro_meas = gyro_meas - constants['gyro_bias']
         # These are in terms of the accelerometer axes, need to transform into the body frame
         accel_meas = constants['R_accel_to_body'] @ accel_meas
-        gyro_meas = constants['R_gyro_to_body'] @ gyro_meas
+        gyro_meas = constants['R_accel_to_body'] @ gyro_meas
+        
+        
+        # Convert the ECEF x,y,z positions to ENU positions
+        pos_enu = utils.ecef_to_enu(x[i] - ref_ecef_x, y[i] - ref_ecef_y, z[i] - ref_ecef_z, ref_lat, ref_lon)
         
         
         # ========== RUN MEKF FIRST (Attitude Estimation) ==========
@@ -125,7 +136,9 @@ def main(data_file='data.csv', results_dir='results'):
         # ========== RUN EKF (Position Estimation) ==========
         # Convert acceleration from body frame to inertial frame using MEKF attitude estimate
         # accel_inertial = R_b2i * accel_body (rotate body frame acceleration to inertial)
-        accel_inertial = current_attitude.rotate(accel_meas)
+        # accel_inertial = current_attitude.rotate(accel_meas)
+        # Temp, do not use MEKF:
+        accel_inertial = accel_meas
         
         # Remove gravity component from Z axis for EKF measurement
         accel_inertial_no_g = accel_inertial.copy()
@@ -141,9 +154,9 @@ def main(data_file='data.csv', results_dir='results'):
                        current_time >= constants['GPS_spoof_start_time'])
         gps_spoof = np.random.normal(0, constants['GPS_spoof_noise'], 3) if spoof_active else np.zeros(3)
         
-        y_t[0] = x[i] + gps_spoof[0]  # GPS x position (inertial frame) + spoof noise
-        y_t[1] = y[i] + gps_spoof[1]  # GPS y position (inertial frame) + spoof noise
-        y_t[2] = z[i] + gps_spoof[2]  # GPS z position (inertial frame) + spoof noise
+        y_t[0] = pos_enu[0] + gps_spoof[0]  # GPS x position (inertial frame) + spoof noise
+        y_t[1] = pos_enu[1] + gps_spoof[1]  # GPS y position (inertial frame) + spoof noise
+        y_t[2] = pos_enu[2] + gps_spoof[2]  # GPS z position (inertial frame) + spoof noise
         y_t[3] = accel_inertial_no_g[0]  # IMU acceleration x (inertial frame, gravity removed)
         y_t[4] = accel_inertial_no_g[1]  # IMU acceleration y (inertial frame, gravity removed)
         y_t[5] = accel_inertial_no_g[2]  # IMU acceleration z (inertial frame, gravity removed)
@@ -157,7 +170,7 @@ def main(data_file='data.csv', results_dir='results'):
         quaternion_storage.append(mekf.estimate)
         mekf_cov_storage[:, :, i] = mekf.estimate_covariance
     
-    return x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage
+    return x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants
 
 
 
@@ -184,7 +197,7 @@ if __name__ == "__main__":
     print("=" * 60)
     
     # Call main function with custom results directory
-    x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage = main(data_file, results_dir)
+    x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants = main(data_file, results_dir)
     
     print("=" * 60)
     print("EKF and MEKF algorithms completed")
@@ -225,12 +238,12 @@ if __name__ == "__main__":
     
     # Plot EKF position estimates (with 3σ bounds)
     print("Generating EKF position plots...")
-    plot_results(state_list, cov_list, save_dir=results_dir, show=False)
+    plot_results(state_list, cov_list, save_dir=results_dir, show=False, dt=constants['dt'])
     
     # Plot MEKF attitudes (Euler angles with 3σ bounds)
     print("Generating MEKF attitude plots...")
     plot_euler_angles(quaternion_storage, covariances=mekf_cov_storage, 
-                    save_dir=results_dir, show=False)
+                    save_dir=results_dir, show=False, dt=constants['dt'])
     
     print(f"✓ Results plotted and saved to {results_dir}/")
 

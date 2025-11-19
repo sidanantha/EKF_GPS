@@ -38,7 +38,7 @@ def quaternion_to_euler(q):
   return roll, pitch, yaw
 
 
-def plot_euler_angles(quaternions, covariances=None, save_dir='results', show=True):
+def plot_euler_angles(quaternions, covariances=None, save_dir='results', show=True, dt=0.01):
   """
   Plot roll, pitch, yaw over time from quaternion estimates with covariance bounds.
   Creates a single figure with 3 vertically stacked subplots.
@@ -49,6 +49,7 @@ def plot_euler_angles(quaternions, covariances=None, save_dir='results', show=Tr
                  If provided, extracts orientation error covariance and plots bounds
     save_dir: Directory to save plots (default: 'results')
     show: If True, display plots interactively (default: True)
+    dt: Time step in seconds (default: 0.01)
   """
   import os
   os.makedirs(save_dir, exist_ok=True)
@@ -57,7 +58,7 @@ def plot_euler_angles(quaternions, covariances=None, save_dir='results', show=Tr
   euler_angles = [quaternion_to_euler(q) for q in quaternions]
   
   # Extract individual angles and convert to degrees
-  t = np.arange(len(euler_angles))
+  t = np.arange(len(euler_angles)) * dt
   roll = np.array([np.degrees(e[0]) for e in euler_angles])
   pitch = np.array([np.degrees(e[1]) for e in euler_angles])
   yaw = np.array([np.degrees(e[2]) for e in euler_angles])
@@ -132,7 +133,7 @@ def plot_euler_angles(quaternions, covariances=None, save_dir='results', show=Tr
     axes[2].plot(t, yaw_ub, linestyle='--', color='salmon', linewidth=1, label='3σ Bounds')
     axes[2].plot(t, yaw_lb, linestyle='--', color='salmon', linewidth=1)
     axes[2].fill_between(t, yaw_ub, yaw_lb, color='mistyrose', alpha=0.3)
-  axes[2].set_xlabel('Time (steps)', fontsize=11, fontweight='bold')
+  axes[2].set_xlabel('Time (seconds)', fontsize=11, fontweight='bold')
   axes[2].set_ylabel('Yaw (degrees)', fontsize=11, fontweight='bold')
   axes[2].grid(True, alpha=0.3)
   axes[2].legend(loc='upper right')
@@ -175,66 +176,67 @@ def animate(i, x, y, z):
   point.set_data_3d(x[i], y[i], z[i])
   return line, point
 
-def plot_results(state, cov, save_dir='results', show=True):
+def plot_results(state, cov, save_dir='results', show=True, dt=0.01):
   """
-  Plot EKF results - saves to PNG and displays interactively.
+  Plot EKF results in ENU frame - saves to PNG and displays interactively.
   
   Args:
-    state: List of 3-element position vectors
+    state: List of 3-element position vectors (East, North, Up)
     cov: List of 3x3 covariance matrices
     save_dir: Directory to save plots (default: 'results')
     show: If True, display plots interactively after saving (default: True)
+    dt: Time step in seconds (default: 0.01)
   """
   # Create results directory if it doesn't exist
   import os
   os.makedirs(save_dir, exist_ok=True)
   
-  t = np.arange(len(state))
-  x = np.array([matrix[0] for matrix in state])
-  y = np.array([matrix[1] for matrix in state])
-  z = np.array([matrix[2] for matrix in state])
-  x_cov = np.array([matrix[0, 0] for matrix in cov])
-  y_cov = np.array([matrix[1, 1] for matrix in cov])
-  z_cov = np.array([matrix[2, 2] for matrix in cov])
-  x_up = x + 3.0 * np.sqrt(x_cov)
-  x_low = x - 3.0 * np.sqrt(x_cov)
-  y_up = y + 3.0 * np.sqrt(y_cov)
-  y_low = y - 3.0 * np.sqrt(y_cov)
-  z_up = z + 3.0 * np.sqrt(z_cov)
-  z_low = z - 3.0 * np.sqrt(z_cov)
+  t = np.arange(len(state)) * dt
+  east = np.array([matrix[0] for matrix in state])
+  north = np.array([matrix[1] for matrix in state])
+  up = np.array([matrix[2] for matrix in state])
+  east_cov = np.array([matrix[0, 0] for matrix in cov])
+  north_cov = np.array([matrix[1, 1] for matrix in cov])
+  up_cov = np.array([matrix[2, 2] for matrix in cov])
+  east_up = east + 3.0 * np.sqrt(east_cov)
+  east_low = east - 3.0 * np.sqrt(east_cov)
+  north_up = north + 3.0 * np.sqrt(north_cov)
+  north_low = north - 3.0 * np.sqrt(north_cov)
+  up_up = up + 3.0 * np.sqrt(up_cov)
+  up_low = up - 3.0 * np.sqrt(up_cov)
 
   # Plot all three position components in a single figure with 3 stacked subplots
   fig, axes = plt.subplots(3, 1, figsize=(12, 10))
-  fig.suptitle('EKF Position Estimates', fontsize=16, fontweight='bold')
+  fig.suptitle('EKF Position Estimates (ENU Frame)', fontsize=16, fontweight='bold')
   
-  # Plot x position
-  axes[0].plot(t, x, linestyle='-', color='blue', linewidth=1.5, label='X Estimate')
-  axes[0].plot(t, x_up, linestyle='--', color='cyan', linewidth=1, label='3σ Bounds')
-  axes[0].plot(t, x_low, linestyle='--', color='cyan', linewidth=1)
-  axes[0].fill_between(t, x_up, x_low, color='lightblue', alpha=0.3)
-  axes[0].set_ylabel('X Position (meters)', fontsize=11, fontweight='bold')
-  axes[0].set_title('X Position vs. Time', fontsize=10)
+  # Plot East position
+  axes[0].plot(t, east, linestyle='-', color='blue', linewidth=1.5, label='East Estimate')
+  axes[0].plot(t, east_up, linestyle='--', color='cyan', linewidth=1, label='3σ Bounds')
+  axes[0].plot(t, east_low, linestyle='--', color='cyan', linewidth=1)
+  axes[0].fill_between(t, east_up, east_low, color='lightblue', alpha=0.3)
+  axes[0].set_ylabel('East Position (meters)', fontsize=11, fontweight='bold')
+  axes[0].set_title('East Position vs. Time', fontsize=10)
   axes[0].grid(True, alpha=0.3)
   axes[0].legend(loc='upper right')
   
-  # Plot y position
-  axes[1].plot(t, y, linestyle='-', color='green', linewidth=1.5, label='Y Estimate')
-  axes[1].plot(t, y_up, linestyle='--', color='lightgreen', linewidth=1, label='3σ Bounds')
-  axes[1].plot(t, y_low, linestyle='--', color='lightgreen', linewidth=1)
-  axes[1].fill_between(t, y_up, y_low, color='lightgreen', alpha=0.3)
-  axes[1].set_ylabel('Y Position (meters)', fontsize=11, fontweight='bold')
-  axes[1].set_title('Y Position vs. Time', fontsize=10)
+  # Plot North position
+  axes[1].plot(t, north, linestyle='-', color='green', linewidth=1.5, label='North Estimate')
+  axes[1].plot(t, north_up, linestyle='--', color='lightgreen', linewidth=1, label='3σ Bounds')
+  axes[1].plot(t, north_low, linestyle='--', color='lightgreen', linewidth=1)
+  axes[1].fill_between(t, north_up, north_low, color='lightgreen', alpha=0.3)
+  axes[1].set_ylabel('North Position (meters)', fontsize=11, fontweight='bold')
+  axes[1].set_title('North Position vs. Time', fontsize=10)
   axes[1].grid(True, alpha=0.3)
   axes[1].legend(loc='upper right')
   
-  # Plot z position
-  axes[2].plot(t, z, linestyle='-', color='red', linewidth=1.5, label='Z Estimate')
-  axes[2].plot(t, z_up, linestyle='--', color='salmon', linewidth=1, label='3σ Bounds')
-  axes[2].plot(t, z_low, linestyle='--', color='salmon', linewidth=1)
-  axes[2].fill_between(t, z_up, z_low, color='mistyrose', alpha=0.3)
-  axes[2].set_xlabel('Time (steps)', fontsize=11, fontweight='bold')
-  axes[2].set_ylabel('Z Position (meters)', fontsize=11, fontweight='bold')
-  axes[2].set_title('Z Position vs. Time', fontsize=10)
+  # Plot Up position
+  axes[2].plot(t, up, linestyle='-', color='red', linewidth=1.5, label='Up Estimate')
+  axes[2].plot(t, up_up, linestyle='--', color='salmon', linewidth=1, label='3σ Bounds')
+  axes[2].plot(t, up_low, linestyle='--', color='salmon', linewidth=1)
+  axes[2].fill_between(t, up_up, up_low, color='mistyrose', alpha=0.3)
+  axes[2].set_xlabel('Time (seconds)', fontsize=11, fontweight='bold')
+  axes[2].set_ylabel('Up Position (meters)', fontsize=11, fontweight='bold')
+  axes[2].set_title('Up Position vs. Time', fontsize=10)
   axes[2].grid(True, alpha=0.3)
   axes[2].legend(loc='upper right')
   
@@ -247,19 +249,19 @@ def plot_results(state, cov, save_dir='results', show=True):
   figure = plt.figure(figsize=(10, 8))
   traj = figure.add_subplot(111, projection='3d')
 
-  traj.plot(x, y, z, linestyle='-', color='blue', linewidth=2, label='Trajectory')
-  traj.scatter(x[0], y[0], z[0], marker='o', color='green', s=100, label='Start')
-  traj.scatter(x[-1], y[-1], z[-1], marker='s', color='red', s=100, label='End')
+  traj.plot(east, north, up, linestyle='-', color='blue', linewidth=2, label='Trajectory')
+  traj.scatter(east[0], north[0], up[0], marker='o', color='green', s=100, label='Start')
+  traj.scatter(east[-1], north[-1], up[-1], marker='s', color='red', s=100, label='End')
   
   # Skip covariance ellipsoids for computational efficiency (comment out if desired)
   # for i in range(0, len(state), max(1, len(state)//10)):  # Plot every 10th ellipsoid
   #   xe, ye, ze = make_ellipse(state[i], cov[i])
   #   traj.plot_surface(xe, ye, ze, color='gray', alpha=0.1)
     
-  traj.set_title("3D Position Trajectory")
-  traj.set_xlabel("x position (m)")
-  traj.set_ylabel("y position (m)")
-  traj.set_zlabel("z position (m)")
+  traj.set_title("3D Position Trajectory (ENU Frame)")
+  traj.set_xlabel("East position (m)")
+  traj.set_ylabel("North position (m)")
+  traj.set_zlabel("Up position (m)")
   traj.legend()
   plt.savefig(f'{save_dir}/trajectory_3d.png', dpi=150, bbox_inches='tight')
   print(f"✓ Saved: {save_dir}/trajectory_3d.png")
