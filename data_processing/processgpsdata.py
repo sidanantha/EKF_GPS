@@ -12,7 +12,7 @@ def remove_blanks(df):
 
 #since at 10 Hz, smooth by 5 samples
 def average(pos, num):
-    return np.convolve(poss, np.ones(num)/num, mode='same')
+    return np.convolve(pos, np.ones(num)/num, mode='same')
 
 #remove outliers
 def remove_outliers(df, num = 5, thres = 3):
