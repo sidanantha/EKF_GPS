@@ -12,7 +12,7 @@ def remove_blanks(csv_file_path, output_path = None):
     return df_cleaned
 
 #since at 10 Hz, smooth by 5 samples
-def moving_average(arr, w):
+def moving_average(pos, w):
     return np.convolve(arr, np.ones(w)/w, mode='same')
 
 #remove outliers
