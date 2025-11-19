@@ -57,7 +57,7 @@ def calculate_sigma_gps(df):
     sigma_y = np.std(y)
     sigma_z = np.std(z)
 
-    sigma_gps = np.mean(sigma_x, sigma_y, sigma_z)
+    sigma_gps = np.mean([sigma_x, sigma_y, sigma_z])
 
     return sigma_gps
 
