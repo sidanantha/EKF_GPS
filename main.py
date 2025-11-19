@@ -59,6 +59,11 @@ def main(data_file='data.csv', results_dir='results'):
     
     # Load data
     time, starttime, endtime, timestep, lat, lon, alt, x, y, z, ax, ay, az, gx, gy, gz = data_processing.data_processing(data_file)
+
+    # Remove GPS bias
+    x -= -3.2950379266403615
+    y -= -4.134639696218073
+    z -= -7.6810998735018075
     
     # ============ EKF INITIALIZATION (for position estimation) ============
     # Build EKF matrices:
