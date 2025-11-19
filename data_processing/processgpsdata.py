@@ -11,18 +11,18 @@ def remove_blanks(df):
     return df_cleaned
 
 #since at 10 Hz, smooth by 5 samples
-def moving_average(pos, w):
-    return np.convolve(arr, np.ones(w)/w, mode='same')
+def average(pos, num):
+    return np.convolve(poss, np.ones(num)/num, mode='same')
 
 #remove outliers
-def remove_outliers(df, w = 5, thres = 3):
+def remove_outliers(df, num = 5, thres = 3):
     x = df['ECEF_X'].to_numpy()
     y = df['ECEF_Y'].to_numpy()
     z = df['ECEF_Z'].to_numpy()
     #calculate residuals
-    res_x = x - moving_average(x, 5)
-    res_y = y - moving_average(y, 5)
-    res_z = z - moving_average(z, 5)
+    res_x = x - average(x, num)
+    res_y = y - average(y, num)
+    res_z = z - average(z, num)
     #calculate standard deviations
     sigma_x = np.std(res_x)
     sigma_y = np.std(res_y)
