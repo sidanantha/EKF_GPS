@@ -33,6 +33,11 @@ def define_constants():
         'accel_proc_cov': 0.1,
         'accel_bias_cov': 0.1,
         'accel_obs_cov': 0.1,
+        # IMU Calibration Parameters:
+        'R_accel_to_body': np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]), # accelerometer to body frame rotation matrix
+        'accel_bias': np.array([0.398412, 0.532099, 0.051545]), # accelerometer bias
+        'gyro_bias': np.array([0.177013, -0.001051, -0.020324]), # gyro bias
+        # a_z free fall calibration exists but it seems very noisy. Should not use.
     }
     return constants
 
@@ -94,6 +99,13 @@ def main(data_file='data.csv', results_dir='results'):
         # Create acceleration and gyro vectors
         accel_meas = np.array([ax[i], ay[i], az[i]])
         gyro_meas = np.array([gx[i], gy[i], gz[i]])
+        # There is a bias, subtract it out from the measurements:
+        accel_meas = accel_meas - constants['accel_bias']
+        gyro_meas = gyro_meas - constants['gyro_bias']
+        # These are in terms of the accelerometer axes, need to transform into the body frame
+        accel_meas = constants['R_accel_to_body'] @ accel_meas
+        gyro_meas = constants['R_gyro_to_body'] @ gyro_meas
+        
         
         # ========== RUN MEKF FIRST (Attitude Estimation) ==========
         # MEKF expects NORMALIZED accelerometer measurements (unit vector in gravity direction)
@@ -222,10 +234,10 @@ if __name__ == "__main__":
     
     print(f"✓ Results plotted and saved to {results_dir}/")
 
-    # ============ PRINT SUMMARY ============
+    # ============ PRINT SUMMARY ============å
     print("\n" + "=" * 60)
     print("SUMMARY")
-    print("=" * 60)
+    print("=" * 60) 
     print(f"EKF Position State Vector Shape: {x_k_storage.shape}")
     print(f"  - Position estimates (9 states) x {x_k_storage.shape[1]} time steps")
     print(f"  - State: [x, y, z, vx, vy, vz, ax, ay, az]")
