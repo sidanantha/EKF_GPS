@@ -61,7 +61,7 @@ def calculate_sigma_gps(df):
 
     sigma_gps = np.mean([sigma_x, sigma_y, sigma_z])
 
-    return sigma_gps
+    return np.array([sigma_gps, sigma_x, sigma_y, sigma_z])
 
 #same as cleandata.py
 def process_all_gps_files(field_data_dir, output_suffix='_gpscleaned'):
