@@ -110,12 +110,12 @@ if __name__ == "__main__":
     parser.add_argument(
         '-o', '--output',
         default=None,
-        help='Output file path (default: overwrites original or uses _cleaned suffix)'
+        help='Output file path (default: overwrites original or uses _gpscleaned suffix)'
     )
     parser.add_argument(
         '--inplace',
         action='store_true',
-        help='Overwrite original files instead of creating _cleaned versions'
+        help='Overwrite original files instead of creating _gpscleaned versions'
     )
     
     args = parser.parse_args()
