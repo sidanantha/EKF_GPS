@@ -262,6 +262,17 @@ def plot_results(state, cov, save_dir='results', show=True, dt=0.01):
   traj.set_xlabel("East position (m)")
   traj.set_ylabel("North position (m)")
   traj.set_zlabel("Up position (m)")
+  
+  # Set equal aspect ratio based on data ranges
+  max_range = np.array([east.max()-east.min(), north.max()-north.min(), up.max()-up.min()]).max() / 2.0
+  mid_x = (east.max()+east.min()) * 0.5
+  mid_y = (north.max()+north.min()) * 0.5
+  mid_z = (up.max()+up.min()) * 0.5
+  
+  traj.set_xlim(mid_x - max_range, mid_x + max_range)
+  traj.set_ylim(mid_y - max_range, mid_y + max_range)
+  traj.set_zlim(mid_z - max_range, mid_z + max_range)
+  
   traj.legend()
   plt.savefig(f'{save_dir}/trajectory_3d.png', dpi=150, bbox_inches='tight')
   print(f"✓ Saved: {save_dir}/trajectory_3d.png")
@@ -273,3 +284,103 @@ def plot_results(state, cov, save_dir='results', show=True, dt=0.01):
     plt.show()
   else:
     plt.close('all')
+
+
+def plot_residuals(prefit_residuals, postfit_residuals, dt, results_dir='results'):
+  '''
+  Plot pre-fit and post-fit residuals segregated by GPS and IMU measurements.
+  
+  Args:
+    prefit_residuals: Pre-fit residuals array (6 x N), rows 0-2 are GPS (m), rows 3-5 are IMU (m/s^2)
+    postfit_residuals: Post-fit residuals array (6 x N), rows 0-2 are GPS (m), rows 3-5 are IMU (m/s^2)
+    dt: Time step in seconds
+    results_dir: Directory to save plots
+  '''
+  import os
+  
+  os.makedirs(results_dir, exist_ok=True)
+  
+  # Create time array
+  time = np.arange(prefit_residuals.shape[1]) * dt
+  
+  # Extract residuals
+  # GPS residuals (rows 0-2, in meters)
+  prefit_gps_e = prefit_residuals[0, :]
+  prefit_gps_n = prefit_residuals[1, :]
+  prefit_gps_u = prefit_residuals[2, :]
+  
+  postfit_gps_e = postfit_residuals[0, :]
+  postfit_gps_n = postfit_residuals[1, :]
+  postfit_gps_u = postfit_residuals[2, :]
+  
+  # IMU residuals (rows 3-5, in m/s^2)
+  prefit_imu_e = prefit_residuals[3, :]
+  prefit_imu_n = prefit_residuals[4, :]
+  prefit_imu_u = prefit_residuals[5, :]
+  
+  postfit_imu_e = postfit_residuals[3, :]
+  postfit_imu_n = postfit_residuals[4, :]
+  postfit_imu_u = postfit_residuals[5, :]
+  
+  # Create figure with 3x2 layout
+  fig, axes = plt.subplots(3, 2, figsize=(15, 12))
+  fig.suptitle('Pre-fit vs Post-fit Residuals\nGPS (Left Column) and IMU (Right Column)', 
+               fontsize=16, fontweight='bold')
+  
+  # ===== COLUMN 1: GPS Residuals (meters) =====
+  # East GPS residual
+  axes[0, 0].scatter(time, prefit_gps_e, alpha=0.6, s=10, color='blue', label='Pre-fit')
+  axes[0, 0].scatter(time, postfit_gps_e, alpha=0.6, s=10, color='red', label='Post-fit')
+  axes[0, 0].set_ylabel('East pos (m)', fontsize=11, fontweight='bold')
+  axes[0, 0].set_title('GPS East Position Residual', fontsize=11)
+  axes[0, 0].grid(True, alpha=0.3)
+  axes[0, 0].legend(loc='best', fontsize=9)
+  
+  # North GPS residual
+  axes[1, 0].scatter(time, prefit_gps_n, alpha=0.6, s=10, color='blue', label='Pre-fit')
+  axes[1, 0].scatter(time, postfit_gps_n, alpha=0.6, s=10, color='red', label='Post-fit')
+  axes[1, 0].set_ylabel('North pos (m)', fontsize=11, fontweight='bold')
+  axes[1, 0].set_title('GPS North Position Residual', fontsize=11)
+  axes[1, 0].grid(True, alpha=0.3)
+  axes[1, 0].legend(loc='best', fontsize=9)
+  
+  # Up GPS residual
+  axes[2, 0].scatter(time, prefit_gps_u, alpha=0.6, s=10, color='blue', label='Pre-fit')
+  axes[2, 0].scatter(time, postfit_gps_u, alpha=0.6, s=10, color='red', label='Post-fit')
+  axes[2, 0].set_xlabel('Time (seconds)', fontsize=11, fontweight='bold')
+  axes[2, 0].set_ylabel('Up pos (m)', fontsize=11, fontweight='bold')
+  axes[2, 0].set_title('GPS Up Position Residual', fontsize=11)
+  axes[2, 0].grid(True, alpha=0.3)
+  axes[2, 0].legend(loc='best', fontsize=9)
+  
+  # ===== COLUMN 2: IMU Residuals (m/s^2) =====
+  # East IMU residual
+  axes[0, 1].scatter(time, prefit_imu_e, alpha=0.6, s=10, color='blue', label='Pre-fit')
+  axes[0, 1].scatter(time, postfit_imu_e, alpha=0.6, s=10, color='red', label='Post-fit')
+  axes[0, 1].set_ylabel('East accel (m/s²)', fontsize=11, fontweight='bold')
+  axes[0, 1].set_title('IMU East Acceleration Residual', fontsize=11)
+  axes[0, 1].grid(True, alpha=0.3)
+  axes[0, 1].legend(loc='best', fontsize=9)
+  
+  # North IMU residual
+  axes[1, 1].scatter(time, prefit_imu_n, alpha=0.6, s=10, color='blue', label='Pre-fit')
+  axes[1, 1].scatter(time, postfit_imu_n, alpha=0.6, s=10, color='red', label='Post-fit')
+  axes[1, 1].set_ylabel('North accel (m/s²)', fontsize=11, fontweight='bold')
+  axes[1, 1].set_title('IMU North Acceleration Residual', fontsize=11)
+  axes[1, 1].grid(True, alpha=0.3)
+  axes[1, 1].legend(loc='best', fontsize=9)
+  
+  # Up IMU residual
+  axes[2, 1].scatter(time, prefit_imu_u, alpha=0.6, s=10, color='blue', label='Pre-fit')
+  axes[2, 1].scatter(time, postfit_imu_u, alpha=0.6, s=10, color='red', label='Post-fit')
+  axes[2, 1].set_xlabel('Time (seconds)', fontsize=11, fontweight='bold')
+  axes[2, 1].set_ylabel('Up accel (m/s²)', fontsize=11, fontweight='bold')
+  axes[2, 1].set_title('IMU Up Acceleration Residual', fontsize=11)
+  axes[2, 1].grid(True, alpha=0.3)
+  axes[2, 1].legend(loc='best', fontsize=9)
+  
+  plt.tight_layout()
+  plot_path = os.path.join(results_dir, 'prefit_postfit_residuals.png')
+  fig.savefig(plot_path, dpi=150, bbox_inches='tight')
+  print(f"Saved residuals plot: {plot_path}")
+  plt.close(fig)

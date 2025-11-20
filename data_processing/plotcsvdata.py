@@ -10,7 +10,7 @@ import sys
 # Add parent directory to path to import utils
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import utils.utils as utils
-
+from main import define_constants
 
 def read_csv_data(file_path):
     """
@@ -524,6 +524,136 @@ def plot_relative_enu_data_plotly(csv_file_path, output_dir='./plots'):
     print(f"Saved: {plot_path}")
 
 
+def plot_enu_from_imu_propagation(csv_file_path, output_dir='./plots', dt=0.01, R_accel_to_body=None):
+    """
+    Propagate IMU accelerometer data to estimate ENU positions.
+    Uses the same transformation as the EKF: rotate accel to ENU frame, then integrate.
+    
+    Args:
+        csv_file_path: Path to CSV file with IMU data
+        output_dir: Output directory for plots
+        dt: Time step in seconds (default: 0.01)
+        R_accel_to_body: Rotation matrix from accelerometer to body frame
+    """
+    # Read CSV data
+    df = read_csv_data(csv_file_path)
+    time = get_time_array(df)
+    filename = Path(csv_file_path).stem
+    file_output_dir = os.path.join(output_dir, filename)
+    os.makedirs(file_output_dir, exist_ok=True)
+    
+    # Default rotation matrix if not provided
+    if R_accel_to_body is None:
+        R_accel_to_body = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
+    
+    # Extract accelerometer and gyro data
+    ax = pd.to_numeric(df['ax'], errors='coerce').values
+    ay = pd.to_numeric(df['ay'], errors='coerce').values
+    az = pd.to_numeric(df['az'], errors='coerce').values
+    gx = pd.to_numeric(df['gx'], errors='coerce').values
+    gy = pd.to_numeric(df['gy'], errors='coerce').values
+    gz = pd.to_numeric(df['gz'], errors='coerce').values
+    magx = pd.to_numeric(df['magx'], errors='coerce').values
+    magy = pd.to_numeric(df['magy'], errors='coerce').values
+    magz = pd.to_numeric(df['magz'], errors='coerce').values
+    
+    # Build A dynamics matrix (from EKF)
+    A = np.array([
+        [1, 0, 0, dt, 0, 0, 0.5*dt**2, 0, 0],
+        [0, 1, 0, 0, dt, 0, 0, 0.5*dt**2, 0],
+        [0, 0, 1, 0, 0, dt, 0, 0, 0.5*dt**2],
+        [0, 0, 0, 1, 0, 0, dt, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, dt, 0],
+        [0, 0, 0, 0, 0, 1, 0, 0, dt],
+        [0, 0, 0, 0, 0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 1]
+    ])
+    
+    # Initialize state vector [e, n, u, ve, vn, vu, ae, an, au]
+    state = np.zeros(9)
+    state_history = np.zeros((9, len(time)))
+    
+    # Propagate IMU data
+    for i in range(len(time)):
+        # Skip if any data is NaN
+        if np.isnan(ax[i]) or np.isnan(ay[i]) or np.isnan(az[i]):
+            state_history[:, i] = state
+            continue
+        if np.isnan(magx[i]) or np.isnan(magy[i]) or np.isnan(magz[i]):
+            state_history[:, i] = state
+            continue
+        
+        # Create acceleration vector and rotate to body frame
+        accel_meas = np.array([ax[i], ay[i], az[i]])
+        accel_body = R_accel_to_body @ accel_meas
+        
+        # Compute yaw from magnetometer (roll=0, pitch=0)
+        yaw = utils.compute_yaw(magx[i], magy[i], magz[i], 0, 0, R_accel_to_body)
+        
+        # Build DCM for body to ENU frame (with roll=0, pitch=0)
+        Rx_body_to_enu = np.array([[1, 0, 0], [0, np.cos(0), -np.sin(0)], [0, np.sin(0), np.cos(0)]])
+        Ry_body_to_enu = np.array([[np.cos(0), 0, np.sin(0)], [0, 1, 0], [-np.sin(0), 0, np.cos(0)]])
+        Rz_body_to_enu = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
+        R_body_to_enu = Rx_body_to_enu @ Ry_body_to_enu @ Rz_body_to_enu
+        
+        # Rotate acceleration to ENU frame
+        accel_enu = R_body_to_enu @ accel_body
+        
+        # Remove gravity from Z component
+        accel_enu[2] -= 9.81
+        
+        # Update acceleration in state vector
+        state[6:9] = accel_enu
+        
+        # Propagate state using A matrix
+        state = A @ state
+        
+        # Store state history
+        state_history[:, i] = state
+    
+    # Extract position components (E, N, U)
+    east = state_history[0, :]
+    north = state_history[1, :]
+    up = state_history[2, :]
+    
+    # Create plot
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    fig.suptitle(f'ENU Position from IMU Propagation\n{filename}', fontsize=14, fontweight='bold')
+    
+    # Plot East
+    axes[0].plot(time, east, linewidth=1.5, color='red')
+    axes[0].set_xlabel('Time (s)')
+    axes[0].set_ylabel('ΔE (m)')
+    axes[0].set_title('East Position')
+    axes[0].grid(True, alpha=0.3)
+    axes[0].ticklabel_format(style='plain', axis='y', useOffset=False)
+    
+    # Plot North
+    axes[1].plot(time, north, linewidth=1.5, color='green')
+    axes[1].set_xlabel('Time (s)')
+    axes[1].set_ylabel('ΔN (m)')
+    axes[1].set_title('North Position')
+    axes[1].grid(True, alpha=0.3)
+    axes[1].ticklabel_format(style='plain', axis='y', useOffset=False)
+    
+    # Plot Up
+    axes[2].plot(time, up, linewidth=1.5, color='blue')
+    axes[2].set_xlabel('Time (s)')
+    axes[2].set_ylabel('ΔU (m)')
+    axes[2].set_title('Up Position')
+    axes[2].grid(True, alpha=0.3)
+    axes[2].ticklabel_format(style='plain', axis='y', useOffset=False)
+    
+    plt.tight_layout()
+    
+    plot_path = os.path.join(file_output_dir, 'ENU_IMU.png')
+    fig.savefig(plot_path, dpi=150, bbox_inches='tight')
+    print(f"Saved: {plot_path}")
+    
+    plt.close(fig)
+
+
 def plot_yaw_from_magnetometer(csv_file_path, output_dir='./plots', R_sensor_to_body=None):
     """
     Compute yaw angle from magnetometer data using the compute_yaw function.
@@ -541,6 +671,9 @@ def plot_yaw_from_magnetometer(csv_file_path, output_dir='./plots', R_sensor_to_
     file_output_dir = os.path.join(output_dir, filename)
     os.makedirs(file_output_dir, exist_ok=True)
     
+    # Use provided rotation matrix or default
+    if R_sensor_to_body is None:
+        R_sensor_to_body = np.eye(3)  # Identity matrix by default
     
     # Extract magnetometer data and convert to numeric
     magx = pd.to_numeric(df['magx'], errors='coerce').values
@@ -554,7 +687,7 @@ def plot_yaw_from_magnetometer(csv_file_path, output_dir='./plots', R_sensor_to_
     
     for i in range(len(magx)):
         if not (np.isnan(magx[i]) or np.isnan(magy[i]) or np.isnan(magz[i])):
-            yaw = utils.compute_yaw(magx[i], magy[i], magz[i], roll, pitch, constants['R_accel_to_body'])
+            yaw = utils.compute_yaw(magx[i], magy[i], magz[i], roll, pitch, R_sensor_to_body)
             yaw_angles.append(np.degrees(yaw))
         else:
             yaw_angles.append(np.nan)
@@ -956,6 +1089,10 @@ def plot_gps_and_imu_data(csv_file_path, output_dir='./plots', window_size=1, sh
     # Generate yaw from magnetometer plots
     print(f"Generating yaw from magnetometer plots for {filename}...")
     plot_yaw_from_magnetometer(csv_file_path, output_dir)
+    
+    # Generate ENU from IMU propagation plots
+    print(f"Generating ENU from IMU propagation plots for {filename}...")
+    plot_enu_from_imu_propagation(csv_file_path, output_dir)
 
 
 def plot_all_data_with_plotly(csv_file_path, output_dir='./plots', window_size=1, show_moving_avg=False):

@@ -56,34 +56,39 @@ def build_C(m, dt):
     C[3:6, 6:9] = np.eye(3)  # Acceleration measurement
     return C
 
-def build_Q(sigma_IMU):
+def build_Q(sigma_IMU_x, sigma_IMU_y, sigma_IMU_z):
     '''
     Builds the Q matrix for the EKF.
     Inputs:
-        sigma_IMU: Standard deviation of the IMU, scalar
+        sigma_IMU_x: Standard deviation of the IMU x acceleration
+        sigma_IMU_y: Standard deviation of the IMU y acceleration
+        sigma_IMU_z: Standard deviation of the IMU z acceleration
     Output:
         Q: Q matrix (process noise covariance)
     '''
     Q = np.zeros((9, 9))
     # Reduce acceleration noise by squaring sigma_IMU to make GPS measurements more influential
-    Q[6:9, 6:9] = (sigma_IMU**2) * np.eye(3)
+    Q[6:9, 6:9] = np.diag([sigma_IMU_x**2, sigma_IMU_y**2, sigma_IMU_z**2])
     return Q
 
 
-def build_R(sigma_GPS, sigma_IMU_meas=None):
+def build_R(sigma_GPS_x, sigma_GPS_y, sigma_GPS_z, sigma_IMU_x, sigma_IMU_y, sigma_IMU_z):
     '''
     Builds the R matrix for the EKF.
     Inputs:
-        sigma_GPS: Standard deviation of the GPS (for position)
-        sigma_IMU_meas: Standard deviation of IMU measurements (for acceleration).
-                       If None, defaults to 10*sigma_GPS to trust GPS more.
+        sigma_GPS_x: Standard deviation of the GPS x position
+        sigma_GPS_y: Standard deviation of the GPS y position
+        sigma_GPS_z: Standard deviation of the GPS z position
+        sigma_IMU_x: Standard deviation of the IMU x acceleration
+        sigma_IMU_y: Standard deviation of the IMU y acceleration
+        sigma_IMU_z: Standard deviation of the IMU z acceleration
     Output:
         R: R matrix (6x6 for position and acceleration measurements)
     '''
     
     R = np.zeros((6, 6))
-    R[0:3, 0:3] = sigma_GPS**2 * np.eye(3)  # GPS position noise (lower, trusted more)
-    R[3:6, 3:6] = sigma_IMU_meas**2 * np.eye(3)  # IMU acceleration noise (higher, trusted less)
+    R[0:3, 0:3] = np.diag([sigma_GPS_x**2, sigma_GPS_y**2, sigma_GPS_z**2])  # GPS position noise (lower, trusted more)
+    R[3:6, 3:6] = np.diag([sigma_IMU_x**2, sigma_IMU_y**2, sigma_IMU_z**2])  # IMU acceleration noise (higher, trusted less)
     return R
     
 # Main EKF Algorithm for one iteration:
@@ -99,8 +104,8 @@ def EKF_iteration(x_k, P_k, z_k, u_k, R_k, Q_k, A_k, B_k, C_k, sigma_IMU, sigma_
         A_k: A matrix at time k, 9x9 matrix
         B_k: B matrix at time k, 9x3 matrix
         C_k: C matrix at time k, 6x9 matrix
-        sigma_IMU: Standard deviation of the IMU, scalar, assumed equally distributed in x, y, z
-        sigma_GPS: Standard deviation of the GPS, scalar, assumed equally distributed in x, y, z
+        sigma_IMU: Standard deviation of the IMU, vector of 3 elements
+        sigma_GPS: Standard deviation of the GPS, vector of 3 elements
     Output:
         x_k+1: State vector at time k+1, 9x1 matrix
         P_k+1: Covariance matrix at time k+1, 9x9 matrix
@@ -114,9 +119,15 @@ def EKF_iteration(x_k, P_k, z_k, u_k, R_k, Q_k, A_k, B_k, C_k, sigma_IMU, sigma_
     x_k_next = A_k @ x_k + B_k @ u_k # + w_k
     P_k_next = A_k @ P_k @ A_k.T + Q_k
     
+    # Pre-fit residual (innovation)
+    prefit_residual = z_k - C_k @ x_k_next
+    
     # Update Step:
     K = P_k_next @ C_k.T @ np.linalg.inv(C_k @ P_k_next @ C_k.T + R_k)
-    x_k_next = x_k_next + K @ (z_k - C_k @ x_k_next)
+    x_k_next = x_k_next + K @ prefit_residual
     P_k_next = (np.eye(9) - K @ C_k) @ P_k_next
     
-    return x_k_next, P_k_next
+    # Post-fit residual
+    postfit_residual = z_k - C_k @ x_k_next
+    
+    return x_k_next, P_k_next, prefit_residual, postfit_residual

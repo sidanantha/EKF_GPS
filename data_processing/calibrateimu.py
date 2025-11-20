@@ -80,6 +80,8 @@ def calibrate_imu(csv_file_path, output_dir='./imu_calibration'):
                 'max_error': np.nan,
                 'rms_error': np.nan,
                 'baseline': baseline,
+                'mean_data': np.nan,
+                'std_data': np.nan,
             }
             continue
         
@@ -96,6 +98,8 @@ def calibrate_imu(csv_file_path, output_dir='./imu_calibration'):
             'max_error': max_error,
             'rms_error': rms_error,
             'baseline': baseline,
+            'mean_data': np.mean(data_valid),
+            'std_data': np.std(data_valid),
         }
         
         # Create plot
@@ -133,6 +137,8 @@ def calibrate_imu(csv_file_path, output_dir='./imu_calibration'):
         table_data.append([
             col,
             f"{stats['baseline']:.6f}",
+            f"{stats['mean_data']:.6f}",
+            f"{stats['std_data']:.6f}",
             f"{stats['mean_error']:.6f}",
             f"{stats['std_error']:.6f}",
             f"{stats['rms_error']:.6f}",
@@ -142,6 +148,8 @@ def calibrate_imu(csv_file_path, output_dir='./imu_calibration'):
     headers = [
         'Sensor',
         'Baseline',
+        'Mean Data',
+        'Std Data',
         'Mean Error',
         'Std Dev Error',
         'RMS Error',
