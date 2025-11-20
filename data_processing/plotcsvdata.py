@@ -541,9 +541,6 @@ def plot_yaw_from_magnetometer(csv_file_path, output_dir='./plots', R_sensor_to_
     file_output_dir = os.path.join(output_dir, filename)
     os.makedirs(file_output_dir, exist_ok=True)
     
-    # If no rotation matrix provided, use identity
-    if R_sensor_to_body is None:
-        R_sensor_to_body = np.eye(3)
     
     # Extract magnetometer data and convert to numeric
     magx = pd.to_numeric(df['magx'], errors='coerce').values
@@ -557,7 +554,7 @@ def plot_yaw_from_magnetometer(csv_file_path, output_dir='./plots', R_sensor_to_
     
     for i in range(len(magx)):
         if not (np.isnan(magx[i]) or np.isnan(magy[i]) or np.isnan(magz[i])):
-            yaw = utils.compute_yaw(magx[i], magy[i], magz[i], roll, pitch, R_sensor_to_body)
+            yaw = utils.compute_yaw(magx[i], magy[i], magz[i], roll, pitch, constants['R_accel_to_body'])
             yaw_angles.append(np.degrees(yaw))
         else:
             yaw_angles.append(np.nan)
