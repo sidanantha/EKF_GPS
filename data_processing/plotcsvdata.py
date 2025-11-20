@@ -588,8 +588,12 @@ def plot_enu_from_imu_propagation(csv_file_path, output_dir='./plots', dt=0.01, 
         accel_meas = np.array([ax[i], ay[i], az[i]])
         accel_body = R_accel_to_body @ accel_meas
         
-        # Compute yaw from magnetometer (roll=0, pitch=0)
-        yaw = utils.compute_yaw(magx[i], magy[i], magz[i], 0, 0, R_accel_to_body)
+        # Find roll pitch from accelerometer
+        roll = np.arcsin(accel_body[0]/9.81)
+        pitch = np.arcsin(accel_body[1]/accel_body[2])
+        
+        # Compute yaw from magnetometer
+        yaw = utils.compute_yaw(magx[i], magy[i], magz[i], roll, pitch, R_accel_to_body)
         
         # Build DCM for body to ENU frame (with roll=0, pitch=0)
         Rx_body_to_enu = np.array([[1, 0, 0], [0, np.cos(0), -np.sin(0)], [0, np.sin(0), np.cos(0)]])
@@ -648,6 +652,110 @@ def plot_enu_from_imu_propagation(csv_file_path, output_dir='./plots', dt=0.01, 
     plt.tight_layout()
     
     plot_path = os.path.join(file_output_dir, 'ENU_IMU.png')
+    fig.savefig(plot_path, dpi=150, bbox_inches='tight')
+    print(f"Saved: {plot_path}")
+    
+    plt.close(fig)
+
+
+def plot_euler_from_imu(csv_file_path, output_dir='./plots', R_sensor_to_body=None):
+    """
+    Compute Euler angles (roll, pitch, yaw) from IMU data.
+    Roll and pitch are computed from accelerometer data.
+    Yaw is computed from magnetometer data using actual roll and pitch values.
+    
+    Args:
+        csv_file_path: Path to CSV file with IMU data
+        output_dir: Output directory for plots
+        R_sensor_to_body: Rotation matrix from sensor to body frame (default: identity matrix)
+    """
+    # Read CSV data
+    df = read_csv_data(csv_file_path)
+    time = get_time_array(df)
+    filename = Path(csv_file_path).stem
+    file_output_dir = os.path.join(output_dir, filename)
+    os.makedirs(file_output_dir, exist_ok=True)
+    
+    # Use provided rotation matrix or default
+    if R_sensor_to_body is None:
+        R_sensor_to_body = np.eye(3)  # Identity matrix by default
+    
+    # Extract accelerometer and magnetometer data
+    accel_body_x = pd.to_numeric(df['ax'], errors='coerce').values
+    accel_body_y = pd.to_numeric(df['ay'], errors='coerce').values
+    accel_body_z = pd.to_numeric(df['az'], errors='coerce').values
+    magx = pd.to_numeric(df['magx'], errors='coerce').values
+    magy = pd.to_numeric(df['magy'], errors='coerce').values
+    magz = pd.to_numeric(df['magz'], errors='coerce').values
+    
+    
+    # Subtract the bias terms from the accelerometer data:
+    constants = define_constants()
+    accel_body_x -= constants['accel_bias'][0]
+    accel_body_y -= constants['accel_bias'][1]
+    accel_body_z -= constants['accel_bias'][2]
+    
+    # Compute roll, pitch, and yaw
+    roll_angles = []
+    pitch_angles = []
+    yaw_angles = []
+    
+    for i in range(len(accel_body_x)):
+        # Calculate roll and pitch from accelerometer
+        if not (np.isnan(accel_body_x[i]) or np.isnan(accel_body_y[i]) or np.isnan(accel_body_z[i])):
+            roll = np.arcsin(accel_body_x[i] / 9.81)
+            pitch = np.arcsin(accel_body_y[i] / accel_body_z[i])
+            roll_angles.append(np.degrees(roll))
+            pitch_angles.append(np.degrees(pitch))
+        else:
+            roll_angles.append(np.nan)
+            pitch_angles.append(np.nan)
+            roll = 0
+            pitch = 0
+        
+        # Calculate yaw from magnetometer using actual roll and pitch
+        if not (np.isnan(magx[i]) or np.isnan(magy[i]) or np.isnan(magz[i])):
+            yaw = utils.compute_yaw(magx[i], magy[i], magz[i], roll, pitch, R_sensor_to_body)
+            yaw_angles.append(np.degrees(yaw))
+        else:
+            yaw_angles.append(np.nan)
+    
+    roll_angles = np.array(roll_angles)
+    pitch_angles = np.array(pitch_angles)
+    yaw_angles = np.array(yaw_angles)
+    
+    # Create 3x1 matplotlib plot
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig.suptitle(f'Euler Angles from IMU Data\n{filename}', fontsize=14, fontweight='bold')
+    
+    # Plot Roll
+    axes[0].plot(time, roll_angles, linewidth=1.5, color='blue', label='Roll')
+    axes[0].set_ylabel('Roll (degrees)', fontsize=11, fontweight='bold')
+    axes[0].set_title('Roll Angle (from Accelerometer)', fontsize=11)
+    axes[0].grid(True, alpha=0.3)
+    axes[0].ticklabel_format(style='plain', axis='y', useOffset=False)
+    axes[0].legend(loc='best')
+    
+    # Plot Pitch
+    axes[1].plot(time, pitch_angles, linewidth=1.5, color='green', label='Pitch')
+    axes[1].set_ylabel('Pitch (degrees)', fontsize=11, fontweight='bold')
+    axes[1].set_title('Pitch Angle (from Accelerometer)', fontsize=11)
+    axes[1].grid(True, alpha=0.3)
+    axes[1].ticklabel_format(style='plain', axis='y', useOffset=False)
+    axes[1].legend(loc='best')
+    
+    # Plot Yaw
+    axes[2].plot(time, yaw_angles, linewidth=1.5, color='red', label='Yaw')
+    axes[2].set_xlabel('Time (s)', fontsize=11, fontweight='bold')
+    axes[2].set_ylabel('Yaw (degrees)', fontsize=11, fontweight='bold')
+    axes[2].set_title('Yaw Angle (from Magnetometer with actual Roll/Pitch)', fontsize=11)
+    axes[2].grid(True, alpha=0.3)
+    axes[2].ticklabel_format(style='plain', axis='y', useOffset=False)
+    axes[2].legend(loc='best')
+    
+    plt.tight_layout()
+    
+    plot_path = os.path.join(file_output_dir, 'euler_from_imu.png')
     fig.savefig(plot_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {plot_path}")
     
@@ -1085,6 +1193,10 @@ def plot_gps_and_imu_data(csv_file_path, output_dir='./plots', window_size=1, sh
     # Generate relative ENU plots
     print(f"Generating relative ENU plots for {filename}...")
     plot_relative_enu_data(csv_file_path, output_dir)
+    
+    # Generate Euler angles from IMU plots
+    print(f"Generating Euler angles from IMU plots for {filename}...")
+    plot_euler_from_imu(csv_file_path, output_dir)
     
     # Generate yaw from magnetometer plots
     print(f"Generating yaw from magnetometer plots for {filename}...")

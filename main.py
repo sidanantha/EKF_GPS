@@ -157,8 +157,8 @@ def main(data_file='data.csv', results_dir='results', gps_spoof_noise=0, gps_spo
         
         
         # Rotate the acceleration vector from the body-fixed frame to the ENU frame
-        roll = 0    # Temp, do not use MEKF
-        pitch = 0   # Temp, do not use MEKF
+        roll = np.arcsin(accel_body[0]/9.81)
+        pitch = np.arcsin(accel_body[1]/accel_body[2])
         # Compute current yaw angle from magnetometer data
         yaw = utils.compute_yaw(gx[i], gy[i], gz[i], 0, 0, constants['R_accel_to_body'])
         # Comoute DCM for body to ENU frame
