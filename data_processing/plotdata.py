@@ -292,12 +292,13 @@ def plot_results(state, cov, save_dir='results', show=True, dt=0.01):
     plt.close('all')
 
 
-def plot_attitude_complementary(attitude_storage, dt, results_dir='results'):
+def plot_attitude_complementary(attitude_storage, attitude_meas_storage, dt, results_dir='results'):
   '''
-  Plot complementary filter attitude estimates (roll, pitch, yaw) vs time.
+  Plot complementary filter attitude estimates vs measured attitudes (roll, pitch, yaw) vs time.
   
   Args:
-    attitude_storage: Array of shape (3, N) containing [roll, pitch, yaw] in radians for N timesteps
+    attitude_storage: Array of shape (3, N) containing complementary filter [roll, pitch, yaw] in radians for N timesteps
+    attitude_meas_storage: Array of shape (3, N) containing measured [roll, pitch, yaw] in radians for N timesteps
     dt: Time step in seconds
     results_dir: Directory to save plots
   '''
@@ -309,30 +310,37 @@ def plot_attitude_complementary(attitude_storage, dt, results_dir='results'):
   time = np.arange(attitude_storage.shape[1]) * dt
   
   # Extract attitudes and convert to degrees
-  roll = np.degrees(attitude_storage[0, :])
-  pitch = np.degrees(attitude_storage[1, :])
-  yaw = np.degrees(attitude_storage[2, :])
+  roll_comp = np.degrees(attitude_storage[0, :])
+  pitch_comp = np.degrees(attitude_storage[1, :])
+  yaw_comp = np.degrees(attitude_storage[2, :])
+  
+  roll_meas = np.degrees(attitude_meas_storage[0, :])
+  pitch_meas = np.degrees(attitude_meas_storage[1, :])
+  yaw_meas = np.degrees(attitude_meas_storage[2, :])
   
   # Create figure with 3x1 layout
   fig, axes = plt.subplots(3, 1, figsize=(12, 10))
-  fig.suptitle('Complementary Filter Attitude Estimates', fontsize=16, fontweight='bold')
+  fig.suptitle('Complementary Filter Attitude Estimates vs Measured', fontsize=16, fontweight='bold')
   
   # Plot Roll
-  axes[0].plot(time, roll, linestyle='-', color='blue', linewidth=2, label='Roll Estimate')
+  axes[0].plot(time, roll_meas, linestyle=':', color='cyan', linewidth=2, label='Accel Only')
+  axes[0].plot(time, roll_comp, linestyle='-', color='blue', linewidth=2, label='Complementary Filter')
   axes[0].set_ylabel('Roll (degrees)', fontsize=11, fontweight='bold')
   axes[0].set_title('Roll (φ) - Rotation around X-axis', fontsize=11)
   axes[0].grid(True, alpha=0.3)
   axes[0].legend(loc='upper right')
   
   # Plot Pitch
-  axes[1].plot(time, pitch, linestyle='-', color='green', linewidth=2, label='Pitch Estimate')
+  axes[1].plot(time, pitch_meas, linestyle=':', color='lightgreen', linewidth=2, label='Accel Only')
+  axes[1].plot(time, pitch_comp, linestyle='-', color='green', linewidth=2, label='Complementary Filter')
   axes[1].set_ylabel('Pitch (degrees)', fontsize=11, fontweight='bold')
   axes[1].set_title('Pitch (θ) - Rotation around Y-axis', fontsize=11)
   axes[1].grid(True, alpha=0.3)
   axes[1].legend(loc='upper right')
   
   # Plot Yaw
-  axes[2].plot(time, yaw, linestyle='-', color='red', linewidth=2, label='Yaw Estimate')
+  axes[2].plot(time, yaw_meas, linestyle=':', color='salmon', linewidth=2, label='Accel Only')
+  axes[2].plot(time, yaw_comp, linestyle='-', color='red', linewidth=2, label='Complementary Filter')
   axes[2].set_xlabel('Time (seconds)', fontsize=11, fontweight='bold')
   axes[2].set_ylabel('Yaw (degrees)', fontsize=11, fontweight='bold')
   axes[2].set_title('Yaw (ψ) - Rotation around Z-axis', fontsize=11)

@@ -75,6 +75,11 @@ def main(data_file='data.csv', results_dir='results', gps_spoof_noise=0, gps_spo
     y -= constants['gps_bias'][1]
     z -= constants['gps_bias'][2]
     
+    # Remove Gyro bias
+    gx -= constants['gyro_bias'][0]
+    gy -= constants['gyro_bias'][1]
+    gz -= constants['gyro_bias'][2]
+    
     # ============ EKF INITIALIZATION (for position estimation) ============
     # Build EKF matrices:
     A = EKF.build_A(constants['dt'])
@@ -97,6 +102,7 @@ def main(data_file='data.csv', results_dir='results', gps_spoof_noise=0, gps_spo
     
     # Init Attitude storage (from complementary filter)
     attitude_storage = np.zeros((3, len(time)))  # Store roll, pitch, yaw
+    attitude_meas_storage = np.zeros((3, len(time)))  # Store measured roll, pitch, yaw
     
     # ============ MEKF INITIALIZATION (for attitude estimation) ============
     # Initialize with identity quaternion
@@ -174,7 +180,7 @@ def main(data_file='data.csv', results_dir='results', gps_spoof_noise=0, gps_spo
         GPS_ENU_prev = GPS_ENU_curr
         
         # Need to solve in complementary filter:
-        attitude_comp = complementary_filter(gyro_body, accel_body, attitude_prev, alpha=0.5, time_delta=constants['dt'])
+        attitude_comp = complementary_filter(gyro_body, np.array([roll_meas, pitch_meas, yaw_meas]), attitude_prev, alpha=np.array([0.75, 0.75, 0.9]), time_delta=constants['dt'])
         roll = attitude_comp[0]
         pitch = attitude_comp[1]
         yaw = attitude_comp[2]
@@ -224,11 +230,16 @@ def main(data_file='data.csv', results_dir='results', gps_spoof_noise=0, gps_spo
         attitude_storage[1, i] = pitch  # Pitch in radians
         attitude_storage[2, i] = yaw  # Yaw in radians
         
+        # Store measured attitude estimates
+        attitude_meas_storage[0, i] = roll_meas  # Measured roll in radians
+        attitude_meas_storage[1, i] = pitch_meas  # Measured pitch in radians
+        attitude_meas_storage[2, i] = yaw_meas  # Measured yaw in radians
+        
         # ========== STORE MEKF RESULTS ==========
         quaternion_storage.append(mekf.estimate)
         mekf_cov_storage[:, :, i] = mekf.estimate_covariance
     
-    return x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_residuals_storage, postfit_residuals_storage, attitude_storage
+    return x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_residuals_storage, postfit_residuals_storage, attitude_storage, attitude_meas_storage
 
 
 def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
@@ -262,7 +273,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     
     # First, run with no spoofing
     print("Running baseline (no spoofing)...")
-    x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_res, postfit_res, attitude_storage = main(
+    x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_res, postfit_res, attitude_storage, attitude_meas_storage = main(
         data_file, results_dir, gps_spoof_noise=0, gps_spoof_start_time=-1
     )
     all_results['no_spoof'] = {
@@ -275,7 +286,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     # Run with each spoofing level
     for i, noise in enumerate(noise_levels):
         print(f"Running with {noise:.1f}m spoofing noise ({i+1}/10)...")
-        x_k_storage_spoof, P_k_storage_spoof, quaternion_storage_spoof, mekf_cov_storage_spoof, constants, _, _, _ = main(
+        x_k_storage_spoof, P_k_storage_spoof, quaternion_storage_spoof, mekf_cov_storage_spoof, constants, _, _, _, _ = main(
             data_file, results_dir, gps_spoof_noise=noise, gps_spoof_start_time=0
         )
         all_results[f'spoof_{i}'] = {
@@ -593,7 +604,7 @@ if __name__ == "__main__":
         print("=" * 60)
         
         # Call main function with custom results directory
-        x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_residuals, postfit_residuals, attitude_storage = main(data_file, results_dir)
+        x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_residuals, postfit_residuals, attitude_storage, attitude_meas_storage = main(data_file, results_dir)
         
         print("=" * 60)
         print("EKF and MEKF algorithms completed")
@@ -646,7 +657,7 @@ if __name__ == "__main__":
         
         # Plot complementary filter attitude estimates
         print("Generating complementary filter attitude plots...")
-        plot_attitude_complementary(attitude_storage, constants['dt'], results_dir)
+        plot_attitude_complementary(attitude_storage, attitude_meas_storage, constants['dt'], results_dir)
         
         print(f"✓ Results plotted and saved to {results_dir}/")
 

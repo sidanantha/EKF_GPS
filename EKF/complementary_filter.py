@@ -2,14 +2,14 @@
 
 import numpy as np
 
-def complementary_filter(gyro_meas, state_accel, state_prev, alpha, time_delta=0.1):
+def complementary_filter(gyro_meas, state_accel, state_prev, alpha=np.array([0.5, 0.5, 0.5]), time_delta=0.1):
     '''
     Complementary filter for attitude estimation.
     Inputs:
         gyro_meas: Gyroscope measurements, 3x1 matrix
         acc_meas: Accelerometer measurements, 3x1 matrix
         state_prev: Previous state, 3x1 matrix
-        alpha: Alpha parameter, scalar
+        alpha: Alpha parameter, 3x1 vector
         time_delta: Time step in seconds (default: 0.1)
     Output:
         state_comp: Complementary filtered state, 3x1 matrix
