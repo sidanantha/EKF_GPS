@@ -8,7 +8,8 @@ import utils.utils as utils
 import numpy as np
 from pyquaternion import Quaternion
 from mekf.MEKF import MEKF
-from data_processing.plotdata import plot_results, plot_euler_angles, plot_residuals
+from data_processing.plotdata import plot_results, plot_euler_angles, plot_residuals, plot_attitude_complementary
+from EKF.complementary_filter import complementary_filter
 
 
 # Define constants
@@ -94,6 +95,9 @@ def main(data_file='data.csv', results_dir='results', gps_spoof_noise=0, gps_spo
     prefit_residuals_storage = np.zeros((6, len(time)))  # Store pre-fit residuals
     postfit_residuals_storage = np.zeros((6, len(time)))  # Store post-fit residuals
     
+    # Init Attitude storage (from complementary filter)
+    attitude_storage = np.zeros((3, len(time)))  # Store roll, pitch, yaw
+    
     # ============ MEKF INITIALIZATION (for attitude estimation) ============
     # Initialize with identity quaternion
     initial_quaternion = Quaternion(axis=[1, 0, 0], angle=0)
@@ -115,6 +119,8 @@ def main(data_file='data.csv', results_dir='results', gps_spoof_noise=0, gps_spo
     ref_ecef_x = x[0]
     ref_ecef_y = y[0]
     ref_ecef_z = z[0]
+    GPS_ENU_prev = np.array([0, 0, 0])
+    attitude_prev = np.array([0, 0, 0])
     
     # ============ MAIN LOOP ============
     for i in range(len(time)):
@@ -157,14 +163,28 @@ def main(data_file='data.csv', results_dir='results', gps_spoof_noise=0, gps_spo
         
         
         # Rotate the acceleration vector from the body-fixed frame to the ENU frame
-        roll = np.arcsin(accel_body[0]/9.81)
-        pitch = np.arcsin(accel_body[1]/accel_body[2])
+        roll_meas = np.arcsin(accel_body[0]/9.81)
+        pitch_meas = np.arcsin(accel_body[1]/accel_body[2])
         # Compute current yaw angle from magnetometer data
-        yaw = utils.compute_yaw(gx[i], gy[i], gz[i], 0, 0, constants['R_accel_to_body'])
+        # Not working, bad sensor
+        # yaw = utils.compute_yaw(gx[i], gy[i], gz[i], 0, 0, constants['R_accel_to_body'])
+        # Use GPS to compute yaw angle
+        GPS_ENU_curr = pos_enu
+        yaw_meas = utils.yaw_from_gps(GPS_ENU_prev, GPS_ENU_curr)
+        GPS_ENU_prev = GPS_ENU_curr
+        
+        # Need to solve in complementary filter:
+        attitude_comp = complementary_filter(gyro_body, accel_body, attitude_prev, alpha=0.5, time_delta=constants['dt'])
+        roll = attitude_comp[0]
+        pitch = attitude_comp[1]
+        yaw = attitude_comp[2]
+        attitude_prev = attitude_comp
+        
+        
         # Comoute DCM for body to ENU frame
         Rx_body_to_enu = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
         Ry_body_to_enu = np.array([[np.cos(pitch), 0, np.sin(pitch)], [0, 1, 0], [-np.sin(pitch), 0, np.cos(pitch)]])
-        Rz_body_to_enu = np.array([[np.cos(roll), -np.sin(roll), 0], [np.sin(roll), np.cos(roll), 0], [0, 0, 1]])
+        Rz_body_to_enu = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
         R_body_to_enu = Rx_body_to_enu @ Ry_body_to_enu @ Rz_body_to_enu
         # Rotate the acceleration vector from the body-fixed frame to the ENU frame
         accel_enu = R_body_to_enu @ accel_body
@@ -179,7 +199,7 @@ def main(data_file='data.csv', results_dir='results', gps_spoof_noise=0, gps_spo
         # Inject GPS spoofing noise if specified and after start time
         current_time = time[i]
         spoof_active = (constants['GPS_spoof_noise'] > 0 and 
-                       constants['GPS_spoof_start_time'] >= 0 and 
+                       constants['GPS_spoof_start_time'] >= 0 and
                        current_time >= constants['GPS_spoof_start_time'])
         gps_spoof = np.random.normal(0, constants['GPS_spoof_noise'], 3) if spoof_active else np.zeros(3)
         
@@ -199,11 +219,16 @@ def main(data_file='data.csv', results_dir='results', gps_spoof_noise=0, gps_spo
         prefit_residuals_storage[:, i] = prefit_residual.flatten()
         postfit_residuals_storage[:, i] = postfit_residual.flatten()
         
+        # Store complementary filter attitude estimates
+        attitude_storage[0, i] = roll  # Roll in radians
+        attitude_storage[1, i] = pitch  # Pitch in radians
+        attitude_storage[2, i] = yaw  # Yaw in radians
+        
         # ========== STORE MEKF RESULTS ==========
         quaternion_storage.append(mekf.estimate)
         mekf_cov_storage[:, :, i] = mekf.estimate_covariance
     
-    return x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_residuals_storage, postfit_residuals_storage
+    return x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_residuals_storage, postfit_residuals_storage, attitude_storage
 
 
 def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
@@ -237,7 +262,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     
     # First, run with no spoofing
     print("Running baseline (no spoofing)...")
-    x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_res, postfit_res = main(
+    x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_res, postfit_res, attitude_storage = main(
         data_file, results_dir, gps_spoof_noise=0, gps_spoof_start_time=-1
     )
     all_results['no_spoof'] = {
@@ -250,7 +275,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     # Run with each spoofing level
     for i, noise in enumerate(noise_levels):
         print(f"Running with {noise:.1f}m spoofing noise ({i+1}/10)...")
-        x_k_storage_spoof, P_k_storage_spoof, quaternion_storage_spoof, mekf_cov_storage_spoof, constants, _, _ = main(
+        x_k_storage_spoof, P_k_storage_spoof, quaternion_storage_spoof, mekf_cov_storage_spoof, constants, _, _, _ = main(
             data_file, results_dir, gps_spoof_noise=noise, gps_spoof_start_time=0
         )
         all_results[f'spoof_{i}'] = {
@@ -568,7 +593,7 @@ if __name__ == "__main__":
         print("=" * 60)
         
         # Call main function with custom results directory
-        x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_residuals, postfit_residuals = main(data_file, results_dir)
+        x_k_storage, P_k_storage, quaternion_storage, mekf_cov_storage, constants, prefit_residuals, postfit_residuals, attitude_storage = main(data_file, results_dir)
         
         print("=" * 60)
         print("EKF and MEKF algorithms completed")
@@ -618,6 +643,10 @@ if __name__ == "__main__":
         # Plot pre-fit and post-fit residuals
         print("Generating residual plots...")
         plot_residuals(prefit_residuals, postfit_residuals, constants['dt'], results_dir)
+        
+        # Plot complementary filter attitude estimates
+        print("Generating complementary filter attitude plots...")
+        plot_attitude_complementary(attitude_storage, constants['dt'], results_dir)
         
         print(f"✓ Results plotted and saved to {results_dir}/")
 

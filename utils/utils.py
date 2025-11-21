@@ -102,3 +102,22 @@ def compute_yaw(B_x_sensor, B_y_sensor, B_z_sensor, roll, pitch, R_sensor_to_bod
     
     return yaw
     
+    
+def yaw_from_gps(GPS_ENU_prev, GPS_ENU_curr):
+    '''
+    Compute the yaw angle from the previous and current GPS ENU positions
+    Inputs:
+        GPS_ENU_prev: Previous GPS ENU position, 3x1 matrix
+        GPS_ENU_curr: Current GPS ENU position, 3x1 matrix
+    Output:
+        yaw: Yaw angle, scalar
+    '''
+    
+    # Compute the delta:
+    delta_GPS_ENU = GPS_ENU_curr - GPS_ENU_prev
+    # Compute the yaw angle:
+    yaw = np.arctan2(delta_GPS_ENU[1], delta_GPS_ENU[0])
+    
+    # Because this is not perfect, add about 10 degrees of noise to the yaw angle:
+    yaw += np.random.normal(0, np.radians(10))
+    return yaw
