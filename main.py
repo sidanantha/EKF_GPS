@@ -438,6 +438,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     fig = plt.figure(figsize=(12, 10))
     ax = fig.add_subplot(111)
 
+    # Set labels/titles
     ax.set_xlabel('East (m)', fontsize=11, fontweight='bold')
     ax.set_ylabel('North (m)', fontsize=11, fontweight='bold')
     ax.set_title('2D Trajectory Comparison - GPS Spoofing Analysis', fontsize=12, fontweight='bold')
@@ -446,6 +447,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     all_east = np.concatenate([east_no_spoof] + [all_results[f'spoof_{i}']['state'][0, :] for i in range(len(noise_levels))])
     all_north = np.concatenate([north_no_spoof] + [all_results[f'spoof_{i}']['state'][1, :] for i in range(len(noise_levels))])
 
+    # Rescale
     max_range = np.array([np.nanmax(all_east)-np.nanmin(all_east), np.nanmax(all_north)-np.nanmin(all_north), np.nanmax(all_up)-np.nanmin(all_up)]).max() / 2.0
     mid_x = (np.nanmax(all_east)+np.nanmin(all_east)) * 0.5
     mid_y = (np.nanmax(all_north)+np.nanmin(all_north)) * 0.5
@@ -455,8 +457,10 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
 
     plt.tight_layout()
 
+    # Lines to animate
     lines = []
 
+    # Set initial trajectories
     init_traj_no_spoof, = ax.plot([], [], linewidth=2, color='black', label='No Spoofing', zorder=10)
     lines.append(init_traj_no_spoof)
     
@@ -469,6 +473,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
 
         lines.append(line)
 
+    # Determine parameters for frame updates 
     lengths = []
     lengths.append(len(east_no_spoof))
     for state in state_spoof:
@@ -477,6 +482,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     frame_count = traj_index[-1]
     frame_rate = 250
     
+    # Define update function for animation frames
     def step(i):
         s = traj_index[0]
         e = traj_index[1]
@@ -495,10 +501,13 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
 
         return lines
     
+    # Animate
     anim_traj = FuncAnimation(fig, step, frames=np.arange(0, frame_count, frame_rate), interval=1000, blit=False)
 
+    # Add legend 
     ax.legend(loc='upper right', fontsize=9, ncol=2)
     
+    # Save animation
     anim_path = os.path.join(results_dir, 'spoofing_trajectory_2d_comparison.gif')
     anim_traj.save(anim_path, writer='pillow', fps=7)
     print(f"Saved: {anim_path}")
@@ -510,6 +519,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     fig = plt.figure(figsize=(12, 10))
     ax = fig.add_subplot(111, projection='3d')
 
+    # Set labels/titles
     ax.set_xlabel('East (m)', fontsize=11, fontweight='bold')
     ax.set_ylabel('North (m)', fontsize=11, fontweight='bold')
     ax.set_zlabel('Up (m)', fontsize=11, fontweight='bold')
@@ -526,15 +536,17 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     mid_y = (np.nanmax(all_north)+np.nanmin(all_north)) * 0.5
     mid_z = (np.nanmax(all_up)+np.nanmin(all_up)) * 0.5
 
-    
+    # Rescale
     ax.set_xlim(mid_x - max_range, mid_x + max_range)
     ax.set_ylim(mid_y - max_range, mid_y + max_range)
     ax.set_zlim(mid_z - max_range, mid_z + max_range)
 
     plt.tight_layout()
 
+    # Lines to animate
     lines = []
 
+    # Set initial trajectories
     init_traj_no_spoof, = ax.plot([], [], [], linewidth=2, color='black', label='No Spoofing', zorder=10)
     lines.append(init_traj_no_spoof)
     
@@ -547,6 +559,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
 
         lines.append(line)
 
+    # Determine parameters for frame updates
     lengths = []
     lengths.append(len(east_no_spoof))
     for state in state_spoof:
@@ -555,6 +568,7 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     frame_count = traj_index[-1]
     frame_rate = 250
     
+    # Define update function for animation frames
     def step(i):
         s = traj_index[0]
         e = traj_index[1]
@@ -577,10 +591,13 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
 
         return lines
     
+    # Animate
     anim_traj = FuncAnimation(fig, step, frames=np.arange(0, frame_count, frame_rate), interval=1000, blit=False)
 
+    # Add legend 
     ax.legend(loc='upper right', fontsize=9, ncol=2)
     
+    # Save animation
     anim_path = os.path.join(results_dir, 'spoofing_trajectory_3d_comparison.gif')
     anim_traj.save(anim_path, writer='pillow', fps=7)
     print(f"Saved: {anim_path}")
