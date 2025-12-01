@@ -10,7 +10,7 @@ from pyquaternion import Quaternion
 from mekf.MEKF import MEKF
 from data_processing.plotdata import plot_results, plot_euler_angles, plot_residuals, plot_attitude_complementary
 from EKF.complementary_filter import complementary_filter
-
+from matplotlib.animation import FuncAnimation
 
 # Define constants
 def define_constants():
@@ -417,21 +417,175 @@ def run_spoofing_analysis(data_file, results_dir='results/spoofing_analysis'):
     all_north = np.concatenate([north_no_spoof] + [all_results[f'spoof_{i}']['state'][1, :] for i in range(len(noise_levels))])
     all_up = np.concatenate([up_no_spoof] + [all_results[f'spoof_{i}']['state'][2, :] for i in range(len(noise_levels))])
     
-    max_range = np.array([all_east.max()-all_east.min(), all_north.max()-all_north.min(), all_up.max()-all_up.min()]).max() / 2.0
-    mid_x = (all_east.max()+all_east.min()) * 0.5
-    mid_y = (all_north.max()+all_north.min()) * 0.5
-    mid_z = (all_up.max()+all_up.min()) * 0.5
+    max_range = np.array([np.nanmax(all_east)-np.nanmin(all_east), np.nanmax(all_north)-np.nanmin(all_north), np.nanmax(all_up)-np.nanmin(all_up)]).max() / 2.0
+    mid_x = (np.nanmax(all_east)+np.nanmin(all_east)) * 0.5
+    mid_y = (np.nanmax(all_north)+np.nanmin(all_north)) * 0.5
+    mid_z = (np.nanmax(all_up)+np.nanmin(all_up)) * 0.5
     
     ax.set_xlim(mid_x - max_range, mid_x + max_range)
     ax.set_ylim(mid_y - max_range, mid_y + max_range)
     ax.set_zlim(mid_z - max_range, mid_z + max_range)
-    
+
     plt.tight_layout()
     plot_path = os.path.join(results_dir, 'spoofing_trajectory_3d_comparison.png')
     fig.savefig(plot_path, dpi=150, bbox_inches='tight')
     print(f"Saved: {plot_path}")
     plt.close(fig)
+
+
+# Plot 2D animation
+    print("\nGenerating 2D animation...")
+    fig = plt.figure(figsize=(12, 10))
+    ax = fig.add_subplot(111)
+
+    ax.set_xlabel('East (m)', fontsize=11, fontweight='bold')
+    ax.set_ylabel('North (m)', fontsize=11, fontweight='bold')
+    ax.set_title('2D Trajectory Comparison - GPS Spoofing Analysis', fontsize=12, fontweight='bold')
     
+    # Set equal aspect ratio based on data ranges
+    all_east = np.concatenate([east_no_spoof] + [all_results[f'spoof_{i}']['state'][0, :] for i in range(len(noise_levels))])
+    all_north = np.concatenate([north_no_spoof] + [all_results[f'spoof_{i}']['state'][1, :] for i in range(len(noise_levels))])
+
+    max_range = np.array([np.nanmax(all_east)-np.nanmin(all_east), np.nanmax(all_north)-np.nanmin(all_north), np.nanmax(all_up)-np.nanmin(all_up)]).max() / 2.0
+    mid_x = (np.nanmax(all_east)+np.nanmin(all_east)) * 0.5
+    mid_y = (np.nanmax(all_north)+np.nanmin(all_north)) * 0.5
+    
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+
+    plt.tight_layout()
+
+    lines = []
+
+    init_traj_no_spoof, = ax.plot([], [], linewidth=2, color='black', label='No Spoofing', zorder=10)
+    lines.append(init_traj_no_spoof)
+    
+    state_spoof = []
+    for i, noise in enumerate(noise_levels):
+        key = f'spoof_{i}'
+        state_spoof.append(all_results[key]['state'])
+        color = colors[i]
+        line, = ax.plot([], [], linewidth=1.5, color=color, label=f'{noise:.1f}m', alpha=0.7)
+
+        lines.append(line)
+
+    lengths = []
+    lengths.append(len(east_no_spoof))
+    for state in state_spoof:
+        lengths.append(state.shape[1])
+    traj_index = np.cumsum([0] + lengths)
+    frame_count = traj_index[-1]
+    frame_rate = 250
+    
+    def step(i):
+        s = traj_index[0]
+        e = traj_index[1]
+        if s <= i and i < e:
+            lines[0].set_data(east_no_spoof[:i], north_no_spoof[:i])
+        else:
+            lines[0].set_data(east_no_spoof, north_no_spoof)
+
+        for j, state in enumerate(state_spoof):
+            s = traj_index[j + 1]
+            e = traj_index[j + 2]
+            if s <= i and i < e:
+                lines[j + 1].set_data(state[0, :i - s], state[1, :i - s])
+            elif i > e:
+                lines[j + 1].set_data(state[0, :], state[1, :])
+
+        return lines
+    
+    anim_traj = FuncAnimation(fig, step, frames=np.arange(0, frame_count, frame_rate), interval=1000, blit=False)
+
+    ax.legend(loc='upper right', fontsize=9, ncol=2)
+    
+    anim_path = os.path.join(results_dir, 'spoofing_trajectory_2d_comparison.gif')
+    anim_traj.save(anim_path, writer='pillow', fps=7)
+    print(f"Saved: {anim_path}")
+    plt.close(fig)
+        
+ # Plot 3D Animation
+    print("\nGenerating 3D animation...")
+    # Create figure to animate
+    fig = plt.figure(figsize=(12, 10))
+    ax = fig.add_subplot(111, projection='3d')
+
+    ax.set_xlabel('East (m)', fontsize=11, fontweight='bold')
+    ax.set_ylabel('North (m)', fontsize=11, fontweight='bold')
+    ax.set_zlabel('Up (m)', fontsize=11, fontweight='bold')
+    ax.set_title('3D Trajectory Comparison - GPS Spoofing Analysis', fontsize=12, fontweight='bold')
+    ax.view_init(elev=20, azim=45)
+    
+    # Set equal aspect ratio based on data ranges
+    all_east = np.concatenate([east_no_spoof] + [all_results[f'spoof_{i}']['state'][0, :] for i in range(len(noise_levels))])
+    all_north = np.concatenate([north_no_spoof] + [all_results[f'spoof_{i}']['state'][1, :] for i in range(len(noise_levels))])
+    all_up = np.concatenate([up_no_spoof] + [all_results[f'spoof_{i}']['state'][2, :] for i in range(len(noise_levels))])
+    
+    max_range = np.array([np.nanmax(all_east)-np.nanmin(all_east), np.nanmax(all_north)-np.nanmin(all_north), np.nanmax(all_up)-np.nanmin(all_up)]).max() / 2.0
+    mid_x = (np.nanmax(all_east)+np.nanmin(all_east)) * 0.5
+    mid_y = (np.nanmax(all_north)+np.nanmin(all_north)) * 0.5
+    mid_z = (np.nanmax(all_up)+np.nanmin(all_up)) * 0.5
+
+    
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+    plt.tight_layout()
+
+    lines = []
+
+    init_traj_no_spoof, = ax.plot([], [], [], linewidth=2, color='black', label='No Spoofing', zorder=10)
+    lines.append(init_traj_no_spoof)
+    
+    state_spoof = []
+    for i, noise in enumerate(noise_levels):
+        key = f'spoof_{i}'
+        state_spoof.append(all_results[key]['state'])
+        color = colors[i]
+        line, = ax.plot([], [], [], linewidth=1.5, color=color, label=f'{noise:.1f}m', alpha=0.7)
+
+        lines.append(line)
+
+    lengths = []
+    lengths.append(len(east_no_spoof))
+    for state in state_spoof:
+        lengths.append(state.shape[1])
+    traj_index = np.cumsum([0] + lengths)
+    frame_count = traj_index[-1]
+    frame_rate = 250
+    
+    def step(i):
+        s = traj_index[0]
+        e = traj_index[1]
+        if s <= i and i < e:
+            lines[0].set_data(east_no_spoof[:i], north_no_spoof[:i])
+            lines[0].set_3d_properties(up_no_spoof[:i])
+        else:
+            lines[0].set_data(east_no_spoof, north_no_spoof)
+            lines[0].set_3d_properties(up_no_spoof)
+
+        for j, state in enumerate(state_spoof):
+            s = traj_index[j + 1]
+            e = traj_index[j + 2]
+            if s <= i and i < e:
+                lines[j + 1].set_data(state[0, :i - s], state[1, :i - s])
+                lines[j + 1].set_3d_properties(state[2, :i - s])
+            elif i > e:
+                lines[j + 1].set_data(state[0, :], state[1, :])
+                lines[j + 1].set_3d_properties(state[2, :])
+
+        return lines
+    
+    anim_traj = FuncAnimation(fig, step, frames=np.arange(0, frame_count, frame_rate), interval=1000, blit=False)
+
+    ax.legend(loc='upper right', fontsize=9, ncol=2)
+    
+    anim_path = os.path.join(results_dir, 'spoofing_trajectory_3d_comparison.gif')
+    anim_traj.save(anim_path, writer='pillow', fps=7)
+    print(f"Saved: {anim_path}")
+    plt.close(fig)
+
     # Create individual comparison plots for each spoofing case
     print("Generating individual spoofing comparison plots...")
     
